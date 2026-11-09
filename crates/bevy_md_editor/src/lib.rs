@@ -70,8 +70,10 @@
 
 mod edit;
 mod history;
+mod pointer;
 
 pub use history::{Change, GROUP_WINDOW, History, MAX_STEPS, Step};
+pub use pointer::{ClickSettings, PointerInput};
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -80,7 +82,6 @@ use bevy::clipboard::Clipboard;
 use bevy::ecs::system::SystemParam;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
-use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
 use bevy::text::{
     ComputedTextBlock, TextBrush, TextCursorStyle, TextLayoutInfo, TextReadWriteMode,
@@ -101,13 +102,11 @@ impl Plugin for MarkdownEditorPlugin {
         if !app.is_plugin_added::<MarkdownPlugin>() {
             app.add_plugins(MarkdownPlugin);
         }
+        app.add_plugins(pointer::PointerPlugin);
         app.init_resource::<CaretStyle>()
             .init_resource::<EditMetrics>()
             .add_message::<PlaceCaret>()
-            .add_systems(
-                Update,
-                (clicks_to_place_caret, place_caret, handle_input).chain(),
-            )
+            .add_systems(Update, (place_caret, handle_input).chain())
             .add_systems(PostUpdate, mark_sync_start.before(MarkdownSystems::Sync))
             .add_systems(
                 PostUpdate,
@@ -356,8 +355,9 @@ pub struct EditMetrics {
     laid_out_this_frame: usize,
 }
 
-/// Put the caret where a click landed. `position` is in physical window
-/// pixels; mouse clicks send it, and so can a test.
+/// Put the caret where a single click landed, with no click counting, drag
+/// or Shift (those are [`PointerInput`], which the mouse sends). `position`
+/// is in physical window pixels; a test or an app can send it.
 #[derive(Message, Clone, Copy, Debug)]
 pub struct PlaceCaret {
     /// Physical pixels from the window's top-left corner.
@@ -391,18 +391,6 @@ enum Motion {
     Right,
     Home,
     End,
-}
-
-fn clicks_to_place_caret(
-    buttons: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    mut clicks: MessageWriter<PlaceCaret>,
-) {
-    if buttons.just_pressed(MouseButton::Left)
-        && let Some(position) = window.physical_cursor_position()
-    {
-        clicks.write(PlaceCaret { position });
-    }
 }
 
 /// Finds the text entity of a block, and its layout.
@@ -470,6 +458,7 @@ fn place_caret(
             };
             if let Some(caret) = edit::source_caret(&block, cursor.index()) {
                 editor.caret = caret;
+                editor.anchor = caret;
                 editor.active_since = time.elapsed();
             }
             break;
