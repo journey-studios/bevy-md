@@ -46,6 +46,9 @@ pub struct Step {
     change: Change,
     /// When the last of the merged edits happened.
     at: Duration,
+    /// The fixed end of the selection the change replaced, when there was
+    /// one (see [`History::record_selection`]).
+    anchor_before: Option<usize>,
 }
 
 impl Step {
@@ -73,6 +76,12 @@ impl Step {
     /// The caret after the change.
     pub fn caret_after(&self) -> usize {
         self.change.caret_after
+    }
+
+    /// The fixed end of the selection before the change: where undo puts the
+    /// anchor. Equal to [`Step::caret_before`] when nothing was selected.
+    pub fn anchor_before(&self) -> usize {
+        self.anchor_before.unwrap_or(self.change.caret_before)
     }
 
     /// The source range the change covered before it happened.
@@ -179,10 +188,26 @@ impl History {
         {
             return;
         }
-        self.undo.push_back(Step { change, at: now });
+        self.undo.push_back(Step {
+            change,
+            at: now,
+            anchor_before: None,
+        });
         if self.undo.len() > MAX_STEPS {
             self.undo.pop_front();
         }
+    }
+
+    /// Record an edit that replaced the selection `anchor_before` to
+    /// `change.caret_before`. It is a step of its own, never merged with the
+    /// typing around it, and undo puts the whole selection back.
+    pub fn record_selection(&mut self, change: Change, anchor_before: usize, now: Duration) {
+        self.seal();
+        self.record(change, now);
+        if let Some(top) = self.undo.back_mut() {
+            top.anchor_before = Some(anchor_before);
+        }
+        self.seal();
     }
 
     /// The next change starts a step of its own, whatever it is: a paste is
@@ -198,6 +223,12 @@ impl History {
     /// text it describes, so the history is forgotten rather than applied
     /// to the wrong bytes.
     pub fn undo(&mut self, markdown: &mut Markdown) -> Option<usize> {
+        self.undo_selecting(markdown).map(|(_, caret)| caret)
+    }
+
+    /// [`History::undo`] that also says where the fixed end of the selection
+    /// goes: `(anchor, caret)`.
+    pub(crate) fn undo_selecting(&mut self, markdown: &mut Markdown) -> Option<(usize, usize)> {
         if markdown.is_parsing() {
             return None;
         }
@@ -207,10 +238,10 @@ impl History {
             return None;
         }
         markdown.edit(step.new_range(), step.old());
-        let caret = step.caret_before();
+        let selection = (step.anchor_before(), step.caret_before());
         self.redo.push(step);
         self.sealed = true;
-        Some(caret)
+        Some(selection)
     }
 
     /// Do again the last step that was undone. Returns where the caret goes,
@@ -345,6 +376,27 @@ mod tests {
         let step = history.steps().next().unwrap();
         assert_eq!((step.start(), step.old(), step.new()), (0, "", "hello"));
         assert_eq!((step.caret_before(), step.caret_after()), (0, 5));
+    }
+
+    #[test]
+    fn an_edit_of_a_selection_is_a_step_of_its_own_and_remembers_the_anchor() {
+        let mut history = History::new();
+        history.record(typed(0, "ab"), ms(0));
+        // "cd" selected backwards (anchor 4, caret 2) and replaced by "e".
+        let replaced = Change {
+            start: 2,
+            old: "cd".to_owned(),
+            new: "e".to_owned(),
+            caret_before: 2,
+            caret_after: 3,
+        };
+        history.record_selection(replaced, 4, ms(10));
+        history.record(typed(3, "f"), ms(20));
+        assert_eq!(history.undo_len(), 3, "grouped with neither side");
+        let steps: Vec<&Step> = history.steps().collect();
+        assert_eq!(steps[0].anchor_before(), steps[0].caret_before());
+        assert_eq!(steps[1].anchor_before(), 4);
+        assert_eq!(steps[1].caret_before(), 2);
     }
 
     #[test]

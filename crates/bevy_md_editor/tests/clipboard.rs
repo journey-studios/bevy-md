@@ -502,9 +502,10 @@ fn paste_replaces_the_selection_as_one_step_and_undo_restores_everything() {
         doc.select(anchor, caret);
         doc.paste_events();
         doc.frame();
-        let pasted = SOURCE.replace("**bold**", "new\ntext");
+        // Like typing over it, the paste keeps the style the selection covered.
+        let pasted = SOURCE.replace("**bold**", "**new\ntext**");
         assert_eq!(doc.source(), pasted);
-        assert_eq!(doc.editor().caret(), 5 + "new\ntext".len());
+        assert_eq!(doc.editor().caret(), 7 + "new\ntext".len());
         assert_eq!(doc.editor().selection(), None);
         assert_eq!(doc.undo_steps(), 1);
         doc.assert_is_a_full_parse();
@@ -518,7 +519,7 @@ fn paste_replaces_the_selection_as_one_step_and_undo_restores_everything() {
         doc.redo_events();
         doc.frame();
         assert_eq!(doc.source(), pasted);
-        assert_eq!(doc.editor().caret(), 5 + "new\ntext".len());
+        assert_eq!(doc.editor().caret(), 7 + "new\ntext".len());
         doc.assert_is_a_full_parse();
     }
 }

@@ -20,8 +20,6 @@
 //! step of the history (sealed on both sides, so it never merges with typing),
 //! and undo gives back the text **and the selection** it had.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::time::Duration;
 
@@ -30,71 +28,9 @@ use bevy::text::TextBrush;
 use bevy_md::Markdown;
 use parley::Layout;
 
-use crate::history::{Change, MAX_STEPS, Step};
-use crate::{Action, EditMetrics, MarkdownEditor, clamp_to_boundary, edit, paste_action};
-
-/// Where the selection was when a step replaced it, so that undoing the step
-/// can select it again. [`Change`] only has one caret, and the history is not
-/// the place for the other end.
-///
-/// A memo is matched to a step by what the step did (where, how much, and a
-/// hash of the bytes), and it stays valid across undo and redo because the
-/// step comes back as it was.
-#[derive(Clone, Debug)]
-struct Memo {
-    start: usize,
-    old_len: usize,
-    new_len: usize,
-    old_hash: u64,
-    new_hash: u64,
-    anchor: usize,
-    caret: usize,
-}
-
-fn hash(text: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    hasher.finish()
-}
-
-/// The selections that cuts and pastes replaced, newest last, as many as the
-/// history has steps.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct SelectionMemos(Vec<Memo>);
-
-impl SelectionMemos {
-    fn record(&mut self, change: &Change, anchor: usize, caret: usize) {
-        self.0.push(Memo {
-            start: change.start,
-            old_len: change.old.len(),
-            new_len: change.new.len(),
-            old_hash: hash(&change.old),
-            new_hash: hash(&change.new),
-            anchor,
-            caret,
-        });
-        if self.0.len() > MAX_STEPS {
-            self.0.remove(0);
-        }
-    }
-
-    /// The `(anchor, caret)` that `step` replaced, when it replaced a
-    /// selection.
-    pub(crate) fn selection_of(&self, step: &Step) -> Option<(usize, usize)> {
-        let (old_hash, new_hash) = (hash(step.old()), hash(step.new()));
-        self.0
-            .iter()
-            .rev()
-            .find(|memo| {
-                memo.start == step.start()
-                    && memo.old_len == step.old().len()
-                    && memo.new_len == step.new().len()
-                    && memo.old_hash == old_hash
-                    && memo.new_hash == new_hash
-            })
-            .map(|memo| (memo.anchor, memo.caret))
-    }
-}
+use crate::{
+    Action, EditMetrics, MarkdownEditor, clamp_to_boundary, edit, paste_action, selection,
+};
 
 impl Action {
     /// Whether the action is applied by [`apply`] rather than by the editor's
@@ -147,15 +83,7 @@ pub(crate) fn dispatch(
     if action.uses_clipboard() {
         return apply(editor, markdown, action, clipboard, metrics, now);
     }
-    let changed = crate::apply(editor, markdown, layout, action, now);
-    if matches!(
-        action,
-        Action::Insert(_) | Action::Backspace | Action::Delete
-    ) {
-        // Typing and deleting leave a caret, not a selection.
-        editor.anchor = editor.caret;
-    }
-    changed
+    crate::apply(editor, markdown, layout, action, now)
 }
 
 /// Apply a copy, a cut or a paste that read the clipboard late. Returns
@@ -185,8 +113,7 @@ fn apply(
             if !put(clipboard, metrics, text) {
                 return false;
             }
-            replace_selection(editor, markdown, range, "", now);
-            true
+            selection::replace(editor, markdown, "", now).unwrap_or(false)
         }
         Action::PasteClipboard => match paste_action(clipboard, metrics) {
             Some(Action::Paste(text)) => {
@@ -218,44 +145,11 @@ pub(crate) fn paste(
     text: &str,
     now: Duration,
 ) {
-    if let Some(range) = selected(editor, markdown) {
-        replace_selection(editor, markdown, range, text, now);
-    } else {
+    if selection::replace(editor, markdown, text, now).is_none() {
         editor.history.seal();
         let change = edit::insert(markdown, &mut editor.caret, text);
         editor.history.record(change, now);
         editor.history.seal();
         editor.anchor = editor.caret;
     }
-}
-
-/// Replace `range`, the selection, by `text`, as one sealed step, and put the
-/// caret after `text`. The step remembers the selection for undo.
-fn replace_selection(
-    editor: &mut MarkdownEditor,
-    markdown: &mut Markdown,
-    range: Range<usize>,
-    text: &str,
-    now: Duration,
-) {
-    let change = Change {
-        start: range.start,
-        old: markdown.source()[range.clone()].to_owned(),
-        new: text.to_owned(),
-        caret_before: editor.caret,
-        caret_after: range.start + text.len(),
-    };
-    // The selection as it was, with the end it was moving.
-    let (anchor, caret) = if editor.anchor <= editor.caret {
-        (range.start, range.end)
-    } else {
-        (range.end, range.start)
-    };
-    editor.selections.record(&change, anchor, caret);
-    markdown.edit(range, text);
-    editor.caret = change.caret_after;
-    editor.anchor = editor.caret;
-    editor.history.seal();
-    editor.history.record(change, now);
-    editor.history.seal();
 }
