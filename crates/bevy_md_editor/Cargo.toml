@@ -26,7 +26,10 @@ features = ["std", "bevy_ui", "bevy_text", "bevy_window", "bevy_clipboard", "key
 [dev-dependencies]
 allocation-counter.workspace = true
 serde_json.workspace = true
-# `tests/common` of bevy_md is shared and reads the thread CPU time.
+
+# `tests/common` of bevy_md is shared and reads the thread CPU time, which
+# only exists on Unix; elsewhere those probes read zero.
+[target.'cfg(unix)'.dev-dependencies]
 rustix = { version = "1", default-features = false, features = ["std", "time"] }
 
 [dev-dependencies.bevy]

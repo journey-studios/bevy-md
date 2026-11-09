@@ -290,6 +290,13 @@ pub fn timed_frame(app: &mut App) -> Duration {
 /// telling work apart from waiting: a frame whose wall time is far above its
 /// CPU time spent the difference descheduled, blocked or page-faulting on
 /// someone else's behalf, not running our code.
+#[cfg(not(unix))]
+pub fn thread_cpu() -> Duration {
+    // No thread CPU clock without `rustix`: the probe reads zero.
+    Duration::ZERO
+}
+
+#[cfg(unix)]
 pub fn thread_cpu() -> Duration {
     let time = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
     Duration::new(

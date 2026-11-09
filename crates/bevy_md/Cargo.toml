@@ -22,9 +22,11 @@ features = ["std", "bevy_ui", "bevy_text", "bevy_window"]
 [dev-dependencies]
 allocation-counter.workspace = true
 serde_json.workspace = true
+
 # Thread CPU time (`clock_gettime`), to tell the work a frame did apart from
 # the time it spent waiting to be scheduled. Safe API, used by the paste
-# diagnostics only.
+# diagnostics only. Unix only; elsewhere the probe reads zero.
+[target.'cfg(unix)'.dev-dependencies]
 rustix = { version = "1", default-features = false, features = ["std", "time"] }
 
 [dev-dependencies.bevy]

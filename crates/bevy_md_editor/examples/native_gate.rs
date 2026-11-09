@@ -51,6 +51,7 @@ use bevy::ui_widgets::ScrollArea;
 use bevy::window::{Monitor, PresentMode, PrimaryWindow, WindowOccluded};
 use bevy_md::{Markdown, MarkdownGutter, MarkdownPlugin};
 use bevy_md_editor::{EditMetrics, MarkdownEditor, MarkdownEditorPlugin};
+#[cfg(unix)]
 use rustix::time::{ClockId, clock_gettime};
 use serde_json::{Value, json};
 
@@ -232,6 +233,12 @@ fn main() {
     app.run();
 }
 
+#[cfg(not(unix))]
+fn process_cpu() -> Duration {
+    Duration::ZERO
+}
+
+#[cfg(unix)]
 fn process_cpu() -> Duration {
     let t = clock_gettime(ClockId::ProcessCPUTime);
     Duration::new(t.tv_sec.cast_unsigned(), t.tv_nsec as u32)

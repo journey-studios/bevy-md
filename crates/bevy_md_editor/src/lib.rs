@@ -122,11 +122,24 @@ impl Plugin for MarkdownEditorPlugin {
     }
 }
 
+/// `at` limited to `source` and moved back to a character boundary.
+fn clamp_to_boundary(source: &str, at: usize) -> usize {
+    let mut at = at.min(source.len());
+    while !source.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
 /// The caret of an editable [`Markdown`]. Add it to the same entity.
 #[derive(Component, Debug)]
 pub struct MarkdownEditor {
-    /// Byte offset into the markdown source.
+    /// Byte offset into the markdown source. This is the moving end (the
+    /// focus) of the selection.
     caret: usize,
+    /// The fixed end of the selection, a byte offset into the markdown
+    /// source. Equal to `caret` when nothing is selected.
+    anchor: usize,
     /// Real time of the last move or edit; the blink restarts from it.
     active_since: Duration,
     /// The text entity the cursor was last written to.
@@ -184,6 +197,7 @@ impl MarkdownEditor {
     pub fn new() -> Self {
         Self {
             caret: 0,
+            anchor: 0,
             active_since: Duration::ZERO,
             shown_on: None,
             focus: None,
@@ -227,13 +241,32 @@ impl MarkdownEditor {
     /// Move the caret to a byte offset of `markdown`'s source (the text after
     /// every change, [`Markdown::source`], even one still parsing), clamped
     /// to the source and to a character boundary.
+    /// Any selection is dropped: the anchor goes to the caret.
     pub fn set_caret(&mut self, markdown: &Markdown, caret: usize) {
-        let source = markdown.source();
-        let mut caret = caret.min(source.len());
-        while !source.is_char_boundary(caret) {
-            caret -= 1;
-        }
+        let caret = clamp_to_boundary(markdown.source(), caret);
         self.caret = caret;
+        self.anchor = caret;
+    }
+
+    /// The fixed end of the selection, a byte offset into the source.
+    pub fn anchor(&self) -> usize {
+        self.anchor
+    }
+
+    /// Select from `anchor` (fixed) to `caret` (moving), both clamped to the
+    /// source and to a character boundary. `anchor > caret` is a selection
+    /// made backwards.
+    pub fn set_selection(&mut self, markdown: &Markdown, anchor: usize, caret: usize) {
+        let source = markdown.source();
+        self.anchor = clamp_to_boundary(source, anchor);
+        self.caret = clamp_to_boundary(source, caret);
+    }
+
+    /// The selected bytes of the source, in order, or `None` when nothing is
+    /// selected.
+    pub fn selection(&self) -> Option<std::ops::Range<usize>> {
+        (self.anchor != self.caret)
+            .then(|| self.anchor.min(self.caret)..self.anchor.max(self.caret))
     }
 
     /// The undo and redo stacks.

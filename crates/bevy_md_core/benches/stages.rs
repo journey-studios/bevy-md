@@ -24,6 +24,13 @@ use bevy_md_core::{Document, synthetic};
 const SAMPLE: &str = include_str!("../tests/fixtures/sample.md");
 
 /// CPU time of the calling thread so far.
+#[cfg(not(unix))]
+fn cpu_now() -> Duration {
+    Duration::ZERO
+}
+
+/// CPU time of the calling thread so far.
+#[cfg(unix)]
 fn cpu_now() -> Duration {
     let time = rustix::time::clock_gettime(rustix::time::ClockId::ThreadCPUTime);
     Duration::new(
