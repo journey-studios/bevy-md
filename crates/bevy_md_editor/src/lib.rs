@@ -63,13 +63,21 @@
 //! `system-clipboard` feature reads the operating system's. Copy and cut need
 //! a selection, which does not exist yet.
 //!
+//! # Navigation
+//!
+//! Up and Down move by visual lines and keep their column, Left and Right
+//! go on into the neighbouring block, Page Up and Page Down move a viewport
+//! and Cmd/Ctrl+Home and End go to the ends of the document; with Shift each
+//! grows the selection. See the `navigation` module's source for how a block
+//! with no layout is handled.
+//!
 //! Put a [`MarkdownEditor`] on the entity of a [`Markdown`] and add
-//! [`MarkdownEditorPlugin`]. Not yet: selection, moving between
-//! blocks, splitting and joining blocks, and IME composition (committed text
-//! is inserted).
+//! [`MarkdownEditorPlugin`]. Not yet: selection, splitting and joining
+//! blocks, and IME composition (committed text is inserted).
 
 mod edit;
 mod history;
+mod navigation;
 
 pub use history::{Change, GROUP_WINDOW, History, MAX_STEPS, Step};
 
@@ -91,6 +99,7 @@ use bevy::ui::{ComputedNode, UiGlobalTransform, UiSystems};
 use bevy::window::{Ime, PrimaryWindow};
 use bevy_md::{BlockText, Markdown, MarkdownPlugin, MarkdownSystems, Pinned};
 use bevy_md_core::Document;
+use navigation::{Navigate, Navigator};
 use parley::{Affinity, Cursor, Layout, Selection};
 
 /// Adds caret editing to every [`MarkdownEditor`].
@@ -157,6 +166,8 @@ pub struct MarkdownEditor {
     /// Which modifier keys are down, followed from the key events in order
     /// so that a chord that goes down and up inside one frame still counts.
     modifiers: Modifiers,
+    /// Where a run of Up and Down moves aims horizontally.
+    preferred: Option<navigation::Preferred>,
 }
 
 /// Modifier keys that change what a key means.
@@ -205,6 +216,7 @@ impl MarkdownEditor {
             pending: VecDeque::new(),
             revision: 0,
             modifiers: Modifiers::default(),
+            preferred: None,
         }
     }
 
@@ -368,6 +380,9 @@ pub struct PlaceCaret {
 #[derive(Clone, Debug)]
 enum Action {
     Move(Motion),
+    /// A move by lines or pages, or to an end of the document; `true` when
+    /// it extends the selection (Shift was down).
+    Navigate(Navigate, bool),
     Backspace,
     Delete,
     Insert(String),
@@ -381,7 +396,10 @@ enum Action {
 impl Action {
     /// Whether the action reads the glyph layout of the caret's block.
     fn needs_layout(&self) -> bool {
-        matches!(self, Action::Move(_) | Action::Backspace | Action::Delete)
+        matches!(
+            self,
+            Action::Move(_) | Action::Navigate(..) | Action::Backspace | Action::Delete
+        )
     }
 }
 
@@ -494,6 +512,16 @@ fn key_action(
             paste_action(clipboard, metrics)
         }
         Key::Paste => paste_action(clipboard, metrics),
+        Key::ArrowUp | Key::Home if command => {
+            Some(Action::Navigate(Navigate::DocumentStart, shift))
+        }
+        Key::ArrowDown | Key::End if command => {
+            Some(Action::Navigate(Navigate::DocumentEnd, shift))
+        }
+        Key::ArrowUp => Some(Action::Navigate(Navigate::Up, shift)),
+        Key::ArrowDown => Some(Action::Navigate(Navigate::Down, shift)),
+        Key::PageUp => Some(Action::Navigate(Navigate::PageUp, shift)),
+        Key::PageDown => Some(Action::Navigate(Navigate::PageDown, shift)),
         Key::ArrowLeft => Some(Action::Move(Motion::Left)),
         Key::ArrowRight => Some(Action::Move(Motion::Right)),
         Key::Home => Some(Action::Move(Motion::Home)),
@@ -555,6 +583,7 @@ fn handle_input(
     mut clipboard: Option<ResMut<Clipboard>>,
     editor: Single<(&mut MarkdownEditor, &mut Markdown)>,
     blocks: BlockTexts,
+    navigator: Navigator,
 ) {
     let (mut editor, mut markdown) = editor.into_inner();
 
@@ -657,7 +686,13 @@ fn handle_input(
                 | Action::Redo
         );
         let before = Instant::now();
-        if apply(&mut editor, &mut markdown, layout, &action, now) && edited {
+        let done = if let Action::Navigate(navigate, extend) = action {
+            navigator.apply(&mut editor, &markdown, navigate, extend)
+        } else {
+            editor.preferred = None; // Anything else ends a run of line moves.
+            apply(&mut editor, &mut markdown, layout, &action, now)
+        };
+        if done && edited {
             metrics.document_edit = Some(before.elapsed());
             metrics.edits += 1;
         }
@@ -696,6 +731,8 @@ fn apply(
         }
         Action::Undo => editor.undo(markdown),
         Action::Redo => editor.redo(markdown),
+        // Needs more than one block's layout: see `navigation::Navigator`.
+        Action::Navigate(..) => false,
         Action::Move(motion) => {
             let (Some(block), Some(at)) = (block, at) else {
                 return false;
@@ -705,7 +742,13 @@ fn apply(
                 .document()
                 .block(block)
                 .and_then(|block| edit::source_caret(&block, to));
-            let Some(caret) = caret.filter(|_| to != at) else {
+            // At the edge of a block, Left and Right go on into the next one.
+            let caret = if to == at {
+                navigation::across_blocks(markdown.document(), block, *motion)
+            } else {
+                caret
+            };
+            let Some(caret) = caret else {
                 return false;
             };
             editor.caret = caret;
