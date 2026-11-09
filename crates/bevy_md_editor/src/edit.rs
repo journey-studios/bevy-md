@@ -14,7 +14,20 @@ use crate::history::Change;
 
 /// The block under the caret and the rendered-text byte the caret is at.
 pub(crate) fn caret_text(document: &Document, caret: usize) -> Option<(usize, usize)> {
-    let block = document.block_at(caret)?;
+    let mut block = document.block_at(caret)?;
+    // `block_at` gives a byte on the boundary of two blocks to the first. A
+    // caret there is at the start of the second, unless it is the end of the
+    // first one's text: the text of a heading ends before its line break,
+    // and the next block can start right after it.
+    if let (Some(this), Some(next)) = (document.block(block), document.block(block + 1))
+        && caret == this.span().end
+        && next.span().start == caret
+        && this
+            .source_offset(this.content.text.len(), Bias::Upstream)
+            .is_none_or(|end| end < caret)
+    {
+        block += 1;
+    }
     Some((block, document.block(block)?.text_offset(caret)?))
 }
 

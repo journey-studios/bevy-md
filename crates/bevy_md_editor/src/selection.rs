@@ -32,7 +32,7 @@ use bevy_md::Markdown;
 use bevy_md_core::Document;
 use parley::{Affinity, Cursor, Layout, Selection};
 
-use crate::{MarkdownEditor, Motion, edit, motion_to};
+use crate::{MarkdownEditor, Motion, edit, motion_to, navigation};
 
 /// Select the whole document: the anchor at its start, the caret at its end.
 /// Returns whether the selection changed.
@@ -99,10 +99,15 @@ pub(crate) fn extend(
         return false;
     };
     let to = motion_to(document, layout, block, at, motion);
-    let caret = document
-        .block(block)
-        .and_then(|block| edit::source_caret(&block, to))
-        .filter(|caret| to != at && *caret != editor.caret);
+    let caret = if to == at {
+        // At the edge of a block, Left and Right go on into the next one.
+        navigation::across_blocks(document, block, motion)
+    } else {
+        document
+            .block(block)
+            .and_then(|block| edit::source_caret(&block, to))
+    }
+    .filter(|caret| *caret != editor.caret);
     let Some(caret) = caret else {
         return false;
     };

@@ -79,14 +79,22 @@
 //! the history. See the `selection` module for how it is edited and drawn;
 //! only the block with the caret draws it.
 //!
+//! # Navigation
+//!
+//! Up and Down move by visual lines and keep their column, Left and Right
+//! go on into the neighbouring block, Page Up and Page Down move a viewport
+//! and Cmd/Ctrl+Home and End go to the ends of the document; with Shift each
+//! grows the selection. See the `navigation` module's source for how a block
+//! with no layout is handled.
+//!
 //! Put a [`MarkdownEditor`] on the entity of a [`Markdown`] and add
-//! [`MarkdownEditorPlugin`]. Not yet: moving between
-//! blocks, splitting and joining blocks, and IME composition (committed text
-//! is inserted).
+//! [`MarkdownEditorPlugin`]. Not yet: splitting and joining blocks, and IME
+//! composition (committed text is inserted).
 
 mod clipboard;
 mod edit;
 mod history;
+mod navigation;
 mod pointer;
 mod selection;
 
@@ -110,6 +118,7 @@ use bevy::ui::{ComputedNode, UiGlobalTransform, UiSystems};
 use bevy::window::{Ime, PrimaryWindow};
 use bevy_md::{BlockText, Markdown, MarkdownPlugin, MarkdownSystems, Pinned};
 use bevy_md_core::Document;
+use navigation::{Navigate, Navigator};
 use parley::{Affinity, Cursor, Layout, Selection};
 
 /// Adds caret editing to every [`MarkdownEditor`].
@@ -174,6 +183,8 @@ pub struct MarkdownEditor {
     /// Which modifier keys are down, followed from the key events in order
     /// so that a chord that goes down and up inside one frame still counts.
     modifiers: Modifiers,
+    /// Where a run of Up and Down moves aims horizontally.
+    preferred: Option<navigation::Preferred>,
 }
 
 /// Modifier keys that change what a key means.
@@ -222,6 +233,7 @@ impl MarkdownEditor {
             pending: VecDeque::new(),
             revision: 0,
             modifiers: Modifiers::default(),
+            preferred: None,
         }
     }
 
@@ -399,6 +411,9 @@ enum Action {
     SelectAll,
     /// Esc: drop the selection, keep the caret.
     Collapse,
+    /// A move by lines or pages, or to an end of the document; `true` when
+    /// it extends the selection (Shift was down).
+    Navigate(Navigate, bool),
     Backspace,
     Delete,
     Insert(String),
@@ -421,7 +436,11 @@ impl Action {
     fn needs_layout(&self) -> bool {
         matches!(
             self,
-            Action::Move(_) | Action::Extend(_) | Action::Backspace | Action::Delete
+            Action::Move(_)
+                | Action::Extend(_)
+                | Action::Navigate(..)
+                | Action::Backspace
+                | Action::Delete
         )
     }
 
@@ -547,6 +566,16 @@ fn key_action(
         Key::Paste => clipboard::paste_shortcut(clipboard, metrics, clipboard_ahead),
         Key::Character(c) if command && c.eq_ignore_ascii_case("a") => Some(Action::SelectAll),
         Key::Escape => Some(Action::Collapse),
+        Key::ArrowUp | Key::Home if command => {
+            Some(Action::Navigate(Navigate::DocumentStart, shift))
+        }
+        Key::ArrowDown | Key::End if command => {
+            Some(Action::Navigate(Navigate::DocumentEnd, shift))
+        }
+        Key::ArrowUp => Some(Action::Navigate(Navigate::Up, shift)),
+        Key::ArrowDown => Some(Action::Navigate(Navigate::Down, shift)),
+        Key::PageUp => Some(Action::Navigate(Navigate::PageUp, shift)),
+        Key::PageDown => Some(Action::Navigate(Navigate::PageDown, shift)),
         Key::ArrowLeft => Some(motion_action(Motion::Left, shift)),
         Key::ArrowRight => Some(motion_action(Motion::Right, shift)),
         Key::Home => Some(motion_action(Motion::Home, shift)),
@@ -607,7 +636,7 @@ fn clean_paste(text: &str) -> String {
 }
 
 // A Bevy system: each parameter is a distinct piece of the world it reads.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_input(
     mut keys: MessageReader<KeyboardInput>,
     mut commits: MessageReader<Ime>,
@@ -617,6 +646,7 @@ fn handle_input(
     mut clipboard: Option<ResMut<Clipboard>>,
     editor: Single<(&mut MarkdownEditor, &mut Markdown)>,
     blocks: BlockTexts,
+    navigator: Navigator,
 ) {
     let (mut editor, mut markdown) = editor.into_inner();
 
@@ -714,15 +744,20 @@ fn handle_input(
             .flatten();
         let edited = action.edits_source();
         let before = Instant::now();
-        let changed = clipboard::dispatch(
-            &mut editor,
-            &mut markdown,
-            layout,
-            &action,
-            clipboard.as_deref_mut(),
-            &mut metrics,
-            now,
-        );
+        let changed = if let Action::Navigate(navigate, extend) = action {
+            navigator.apply(&mut editor, &markdown, navigate, extend)
+        } else {
+            editor.preferred = None; // Anything else ends a run of line moves.
+            clipboard::dispatch(
+                &mut editor,
+                &mut markdown,
+                layout,
+                &action,
+                clipboard.as_deref_mut(),
+                &mut metrics,
+                now,
+            )
+        };
         if changed && edited {
             metrics.document_edit = Some(before.elapsed());
             metrics.edits += 1;
@@ -760,8 +795,9 @@ fn apply(
             clipboard::paste(editor, markdown, text, now);
             true
         }
-        // Applied by `clipboard::apply`, which has the clipboard.
-        Action::PasteClipboard | Action::Copy | Action::Cut => false,
+        // Applied by `clipboard::apply`, which has the clipboard, and by
+        // `navigation::Navigator`, which needs more than one block's layout.
+        Action::PasteClipboard | Action::Copy | Action::Cut | Action::Navigate(..) => false,
         Action::Undo => editor.undo(markdown),
         Action::Redo => editor.redo(markdown),
         Action::SelectAll => selection::select_all(editor, markdown),
@@ -782,7 +818,13 @@ fn apply(
                 .document()
                 .block(block)
                 .and_then(|block| edit::source_caret(&block, to));
-            let Some(caret) = caret.filter(|_| to != at) else {
+            // At the edge of a block, Left and Right go on into the next one.
+            let caret = if to == at {
+                navigation::across_blocks(markdown.document(), block, *motion)
+            } else {
+                caret
+            };
+            let Some(caret) = caret else {
                 return had_selection;
             };
             editor.set_caret(markdown, caret);
