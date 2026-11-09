@@ -63,13 +63,23 @@
 //! `system-clipboard` feature reads the operating system's. Copy and cut need
 //! a selection, which does not exist yet.
 //!
+//! # Selection
+//!
+//! The selection is the byte range between [`MarkdownEditor::anchor`] and
+//! [`MarkdownEditor::caret`]. Shift with Left, Right, Home and End extends
+//! it, `Cmd/Ctrl+A` selects everything, Esc drops it, and typing, IME text,
+//! Backspace and Delete replace or remove just the selection, as one step of
+//! the history. See the `selection` module for how it is edited and drawn;
+//! only the block with the caret draws it.
+//!
 //! Put a [`MarkdownEditor`] on the entity of a [`Markdown`] and add
-//! [`MarkdownEditorPlugin`]. Not yet: selection, moving between
+//! [`MarkdownEditorPlugin`]. Not yet: moving between
 //! blocks, splitting and joining blocks, and IME composition (committed text
 //! is inserted).
 
 mod edit;
 mod history;
+mod selection;
 
 pub use history::{Change, GROUP_WINDOW, History, MAX_STEPS, Step};
 
@@ -219,8 +229,9 @@ impl MarkdownEditor {
     /// replacement made by someone else may have shortened.
     fn clamp_caret(&mut self, markdown: &Markdown) {
         let source = markdown.source();
-        if self.caret > source.len() || !source.is_char_boundary(self.caret) {
-            self.set_caret(markdown, self.caret);
+        let valid = |at: usize| at <= source.len() && source.is_char_boundary(at);
+        if !valid(self.caret) || !valid(self.anchor) {
+            self.set_selection(markdown, self.anchor, self.caret);
         }
     }
 
@@ -274,12 +285,12 @@ impl MarkdownEditor {
         &self.history
     }
 
-    /// Take back the last step of the history and put the caret where it was
-    /// before it. Returns whether anything was undone.
+    /// Take back the last step of the history and put the caret (and the
+    /// selection, if there was one) where it was before it. Returns whether anything was undone.
     pub fn undo(&mut self, markdown: &mut Markdown) -> bool {
-        match self.history.undo(markdown) {
-            Some(caret) => {
-                self.set_caret(markdown, caret);
+        match self.history.undo_selecting(markdown) {
+            Some((anchor, caret)) => {
+                self.set_selection(markdown, anchor, caret);
                 true
             }
             None => false,
@@ -309,6 +320,8 @@ impl Default for MarkdownEditor {
 pub struct CaretStyle {
     /// Color of the caret.
     pub color: Color,
+    /// Background of the selected text.
+    pub selection_color: Color,
     /// Width in logical pixels.
     pub width: f32,
     /// A full on-off cycle; the caret restarts visible on every edit.
@@ -319,6 +332,7 @@ impl Default for CaretStyle {
     fn default() -> Self {
         Self {
             color: Color::srgb(0.95, 0.95, 1.0),
+            selection_color: Color::srgba(0.25, 0.45, 0.85, 0.55),
             width: 1.5,
             blink_period: Duration::from_millis(1060),
         }
@@ -368,6 +382,12 @@ pub struct PlaceCaret {
 #[derive(Clone, Debug)]
 enum Action {
     Move(Motion),
+    /// A motion with Shift: the caret moves, the anchor stays.
+    Extend(Motion),
+    /// Cmd/Ctrl+A.
+    SelectAll,
+    /// Esc: drop the selection, keep the caret.
+    Collapse,
     Backspace,
     Delete,
     Insert(String),
@@ -381,7 +401,10 @@ enum Action {
 impl Action {
     /// Whether the action reads the glyph layout of the caret's block.
     fn needs_layout(&self) -> bool {
-        matches!(self, Action::Move(_) | Action::Backspace | Action::Delete)
+        matches!(
+            self,
+            Action::Move(_) | Action::Extend(_) | Action::Backspace | Action::Delete
+        )
     }
 }
 
@@ -469,7 +492,7 @@ fn place_caret(
                 continue;
             };
             if let Some(caret) = edit::source_caret(&block, cursor.index()) {
-                editor.caret = caret;
+                editor.set_caret(markdown, caret);
                 editor.active_since = time.elapsed();
             }
             break;
@@ -494,10 +517,12 @@ fn key_action(
             paste_action(clipboard, metrics)
         }
         Key::Paste => paste_action(clipboard, metrics),
-        Key::ArrowLeft => Some(Action::Move(Motion::Left)),
-        Key::ArrowRight => Some(Action::Move(Motion::Right)),
-        Key::Home => Some(Action::Move(Motion::Home)),
-        Key::End => Some(Action::Move(Motion::End)),
+        Key::Character(c) if command && c.eq_ignore_ascii_case("a") => Some(Action::SelectAll),
+        Key::Escape => Some(Action::Collapse),
+        Key::ArrowLeft => Some(motion_action(Motion::Left, shift)),
+        Key::ArrowRight => Some(motion_action(Motion::Right, shift)),
+        Key::Home => Some(motion_action(Motion::Home, shift)),
+        Key::End => Some(motion_action(Motion::End, shift)),
         Key::Backspace => Some(Action::Backspace),
         Key::Delete => Some(Action::Delete),
         _ if command => None,
@@ -506,6 +531,15 @@ fn key_action(
             .as_ref()
             .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
             .map(|text| Action::Insert(text.to_string())),
+    }
+}
+
+/// A motion key: it extends the selection with Shift, else it moves.
+fn motion_action(motion: Motion, shift: bool) -> Action {
+    if shift {
+        Action::Extend(motion)
+    } else {
+        Action::Move(motion)
     }
 }
 
@@ -681,7 +715,12 @@ fn apply(
     let (block, at) = edit::caret_text(markdown.document(), editor.caret).unzip();
     match action {
         Action::Insert(text) => {
+            // Typing over a selection replaces it.
+            if let Some(changed) = selection::replace(editor, markdown, text, now) {
+                return changed;
+            }
             let change = edit::insert(markdown, &mut editor.caret, text);
+            editor.anchor = editor.caret;
             editor.history.record(change, now);
             true
         }
@@ -690,15 +729,25 @@ fn apply(
             // before it, and not the head of the word typed after it.
             editor.history.seal();
             let change = edit::insert(markdown, &mut editor.caret, text);
+            editor.anchor = editor.caret;
             editor.history.record(change, now);
             editor.history.seal();
             true
         }
         Action::Undo => editor.undo(markdown),
         Action::Redo => editor.redo(markdown),
+        Action::SelectAll => selection::select_all(editor, markdown),
+        Action::Collapse => selection::collapse(editor),
+        Action::Extend(motion) => selection::extend(editor, markdown, layout, *motion),
         Action::Move(motion) => {
+            // A selection collapses to its edge first (Left, Right), or
+            // the motion starts from the moving end (Home, End).
+            if selection::collapse_to_edge(editor, markdown, *motion) {
+                return true;
+            }
+            let had_selection = selection::collapse(editor);
             let (Some(block), Some(at)) = (block, at) else {
-                return false;
+                return had_selection;
             };
             let to = motion_to(markdown.document(), layout, block, at, *motion);
             let caret = markdown
@@ -706,12 +755,16 @@ fn apply(
                 .block(block)
                 .and_then(|block| edit::source_caret(&block, to));
             let Some(caret) = caret.filter(|_| to != at) else {
-                return false;
+                return had_selection;
             };
-            editor.caret = caret;
+            editor.set_caret(markdown, caret);
             true
         }
         Action::Backspace | Action::Delete => {
+            // With a selection, only the selection goes.
+            if let Some(changed) = selection::replace(editor, markdown, "", now) {
+                return changed;
+            }
             let (Some(block), Some(at)) = (block, at) else {
                 return false;
             };
@@ -727,6 +780,7 @@ fn apply(
             let range = at.min(to)..at.max(to);
             match edit::delete_text(markdown, &mut editor.caret, block, range) {
                 Some(change) => {
+                    editor.anchor = editor.caret;
                     editor.history.record(change, now);
                     true
                 }
@@ -826,6 +880,10 @@ fn focus_caret_block(
         commands.entity(now.text).insert((
             TextCursorStyle {
                 color: style.color,
+                // The caret's block is the only one that shows a selection,
+                // and it is always the focused one.
+                selection_color: style.selection_color,
+                unfocused_selection_color: style.selection_color,
                 ..default()
             },
             TextReadWriteMode::Editable,
@@ -878,9 +936,10 @@ fn show_caret(
     if editor.shown_on != placed.map(|(entity, _)| entity)
         && let Some(old) = editor.shown_on.take()
         && let Ok((.., mut info)) = texts.get_mut(old)
-        && info.cursor.is_some()
+        && (info.cursor.is_some() || !info.selection_rects.is_empty())
     {
         info.cursor = None;
+        info.selection_rects.clear();
     }
     if let Some((entity, at)) = placed
         && let Ok((computed, node, transform, mut info)) = texts.get_mut(entity)
@@ -906,6 +965,18 @@ fn show_caret(
             info.cursor = cursor;
         }
         editor.shown_on = Some(entity);
+
+        // The selected part of this block (the only one that shows it).
+        let rects = editor
+            .selection()
+            .zip(markdown.document().block_at(editor.caret))
+            .map(|(selection, block)| {
+                selection::rects(markdown.document(), &selection, block, layout)
+            })
+            .unwrap_or_default();
+        if info.selection_rects != rects {
+            info.selection_rects = rects;
+        }
 
         // Where the OS should put the IME's candidate window: under the
         // caret, in logical window pixels.
