@@ -88,15 +88,26 @@
 //! with no layout is handled.
 //!
 //! Put a [`MarkdownEditor`] on the entity of a [`Markdown`] and add
-//! [`MarkdownEditorPlugin`]. Not yet: splitting and joining blocks, and IME
-//! composition (committed text is inserted).
+//! [`MarkdownEditorPlugin`]. Not yet: IME composition (committed text is
+//! inserted).
+//!
+//! # Blocks and words
+//!
+//! Enter splits the block at the caret (a list item gets a new item, an
+//! empty one leaves the list, a quote goes on, a code block takes a line
+//! break), Backspace at the start of a block strips its marker and then joins
+//! it to the block above, and Delete at the end joins the next one. Each is
+//! one splice of the source and one step of the history. `Cmd/Ctrl` with Left
+//! and Right moves over words, and with Backspace and Delete deletes them.
 
+mod blocks;
 mod clipboard;
 mod edit;
 mod history;
 mod navigation;
 mod pointer;
 mod selection;
+mod words;
 
 pub use history::{Change, GROUP_WINDOW, History, MAX_STEPS, Step};
 pub use pointer::{ClickSettings, PointerInput};
@@ -416,6 +427,12 @@ enum Action {
     Navigate(Navigate, bool),
     Backspace,
     Delete,
+    /// Break the block at the caret (see `blocks`).
+    Enter,
+    /// Move the caret over a word (see `words`).
+    MoveWord(words::Direction),
+    /// Delete the word before or after the caret (see `words`).
+    DeleteWord(words::Direction),
     Insert(String),
     /// Text from the clipboard: an [`Action::Insert`] that is a step of its
     /// own in the history.
@@ -441,6 +458,8 @@ impl Action {
                 | Action::Navigate(..)
                 | Action::Backspace
                 | Action::Delete
+                | Action::MoveWord(_)
+                | Action::DeleteWord(_)
         )
     }
 
@@ -455,6 +474,8 @@ impl Action {
                 | Action::Cut
                 | Action::Backspace
                 | Action::Delete
+                | Action::Enter
+                | Action::DeleteWord(_)
                 | Action::Undo
                 | Action::Redo
         )
@@ -552,6 +573,9 @@ fn key_action(
     clipboard_ahead: bool,
 ) -> Option<Action> {
     let (command, shift) = (modifiers.command(), modifiers.shift);
+    if let Some(action) = blocks::key_action(&event.logical_key, modifiers) {
+        return Some(action);
+    }
     match &event.logical_key {
         Key::Character(c) if command && c.eq_ignore_ascii_case("z") => {
             Some(if shift { Action::Redo } else { Action::Undo })
@@ -830,10 +854,24 @@ fn apply(
             editor.set_caret(markdown, caret);
             true
         }
+        Action::Enter => blocks::enter(editor, markdown, now),
+        Action::MoveWord(direction) => words::move_word(editor, markdown, layout, *direction),
+        Action::DeleteWord(direction) => {
+            words::delete_word(editor, markdown, layout, *direction, now)
+        }
         Action::Backspace | Action::Delete => {
             // With a selection, only the selection goes.
             if let Some(changed) = selection::replace(editor, markdown, "", now) {
                 return changed;
+            }
+            // At the edge of a block the key joins it to its neighbour.
+            let edge = if matches!(action, Action::Backspace) {
+                blocks::backspace(editor, markdown, now)
+            } else {
+                blocks::delete(editor, markdown, now)
+            };
+            if let Some(done) = edge {
+                return done;
             }
             let (Some(block), Some(at)) = (block, at) else {
                 return false;
