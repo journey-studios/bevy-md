@@ -1,0 +1,49 @@
+[package]
+name = "bevy_md_editor"
+description = "Rich text editing for bevy_md: a caret over laid-out markdown, edits applied to the source"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+bevy_md_core.workspace = true
+bevy_md.workspace = true
+# The layout Bevy hands out is a Parley layout; the same version and
+# features as `bevy_text` keep it one crate in the build.
+parley = { version = "0.11", default-features = false, features = ["std"] }
+
+[dependencies.bevy]
+workspace = true
+features = ["std", "bevy_ui", "bevy_text", "bevy_window", "bevy_clipboard", "keyboard", "mouse"]
+
+[dev-dependencies]
+allocation-counter.workspace = true
+serde_json.workspace = true
+# `tests/common` of bevy_md is shared and reads the thread CPU time.
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
+
+[dev-dependencies.bevy]
+workspace = true
+# The same features as the `bevy_md` budget tests, whose headless app these
+# tests share: `default_font` makes text layout the same on every machine.
+features = ["ui", "bevy_ui_widgets", "default_font", "debug"]
+
+[features]
+# Paste (Cmd/Ctrl+V) reads Bevy's `Clipboard` resource. Without this feature
+# that resource is an in-process buffer that other applications cannot see,
+# which is what keeps tests from touching the user's clipboard; turn it on in
+# an app to paste from the operating system's clipboard.
+system-clipboard = ["bevy/system_clipboard"]
+
+[[example]]
+name = "spike"
+
+[lints]
+workspace = true

@@ -1,0 +1,56 @@
+[workspace]
+members = ["crates/bevy_md_core", "crates/bevy_md", "crates/bevy_md_editor"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/journey-studios/bevy-md"
+keywords = ["bevy", "markdown", "editor", "text", "ui"]
+categories = ["game-development", "gui", "text-processing"]
+
+[workspace.dependencies]
+bevy_md_core = { path = "crates/bevy_md_core", version = "0.1.0" }
+bevy_md = { path = "crates/bevy_md", version = "0.1.0" }
+pulldown-cmark = { version = "0.13", default-features = false }
+rustc-hash = "2"
+# Case folding of link labels, the same the parser compares them with.
+unicase = "2"
+criterion = "0.8"
+serde_json = "1"
+allocation-counter = "0.8"
+
+[workspace.dependencies.bevy]
+version = "0.20.1"
+default-features = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+cast_possible_truncation = "allow"
+must_use_candidate = "allow"
+# Bevy systems take `Res` and `Query` by value.
+needless_pass_by_value = "allow"
+
+# Bevy's recommendation: fast own code in dev, optimized dependencies.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+debug = true

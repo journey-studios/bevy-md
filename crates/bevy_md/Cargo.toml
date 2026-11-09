@@ -1,0 +1,51 @@
+[package]
+name = "bevy_md"
+description = "Fast, streaming-ready markdown rendering (and soon editing) for Bevy UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+bevy_md_core.workspace = true
+
+[dependencies.bevy]
+workspace = true
+features = ["std", "bevy_ui", "bevy_text", "bevy_window"]
+
+[dev-dependencies]
+allocation-counter.workspace = true
+serde_json.workspace = true
+# Thread CPU time (`clock_gettime`), to tell the work a frame did apart from
+# the time it spent waiting to be scheduled. Safe API, used by the paste
+# diagnostics only.
+rustix = { version = "1", default-features = false, features = ["std", "time"] }
+
+[dev-dependencies.bevy]
+workspace = true
+# `default_font` embeds a small font, so layout does not depend on the
+# fonts installed on the machine running the budget tests.
+features = ["ui", "bevy_ui_widgets", "default_font", "debug"]
+
+[features]
+default = ["system-fonts", "multi_threaded"]
+# Parsing large changes (pasting a book) runs on Bevy's async compute pool;
+# without this feature the pool is single threaded and the parse runs on the
+# main thread, in the frame that polls it. Turn it off for WASM.
+multi_threaded = ["bevy/multi_threaded"]
+# The theme asks for the system's sans-serif and monospace families, and
+# Bevy resolves those only with font discovery on. Turn this off when the
+# app sets its own `FontSource::Handle` fonts in the theme.
+system-fonts = ["bevy/system_font_discovery"]
+
+[[example]]
+name = "streaming"
+
+[lints]
+workspace = true

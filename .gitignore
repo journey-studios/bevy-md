@@ -1,0 +1,9 @@
+/target
+**/*.rs.bk
+.DS_Store
+/flamegraph*.svg
+/perf.data*
+
+# Local machine captures and raw benchmark traces; summaries live in the plan.
+/docs/evidence/
+/docs/screenshots/

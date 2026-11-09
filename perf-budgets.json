@@ -1,0 +1,605 @@
+{
+  "_doc": "Performance budgets read by crates/bevy_md/tests/budgets.rs (and the other budget tests). `limit` is what the test enforces, `measured` is the value when the budget was set, `why` says what it protects. A limit only changes together with a new measured value and the reason in `why`. Print fresh values with BEVY_MD_PRINT_BUDGETS=1.",
+  "budgets": {
+    "live_blocks_200": {
+      "limit": 72,
+      "measured": 57,
+      "why": "M2 (virtualization): blocks with entities: one screen above the visible ones to two below. The same at every document size (a test also compares the sets for 2000 and 100000 blocks)."
+    },
+    "bytes_per_block_200": {
+      "limit": 71609,
+      "measured": 57287,
+      "why": "M2 (virtualization): bytes left allocated by opening the document, per block: the source, the parsed blocks and the height index, plus the fixed cost of the ~57 live blocks (so it falls as the document grows). Before M2 it was 87 KB / 50 KB / 54 KB per block."
+    },
+    "idle_spawns_200": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): nodes spawned or despawned in an idle frame: none, in any of 30 frames."
+    },
+    "idle_laid_out_200": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): text blocks laid out in an idle frame: none, in any of 30 frames."
+    },
+    "idle_allocations_200": {
+      "limit": 70,
+      "measured": 58,
+      "why": "M2 (virtualization): allocations of an idle frame (the 27th best of 30: Bevy has a frame now and then with ~240 allocations that is not the document's). Before M2 it was 57 at 200 blocks and 58 at 20000, and the bytes below grew with the document. Review of M3-M5: 58 with the pool container and the gutter system in the app (limit unchanged)."
+    },
+    "idle_bytes_200": {
+      "limit": 45460,
+      "measured": 36368,
+      "why": "M2 (virtualization): bytes allocated by an idle frame: now the same at every size (before: 36 KB at 200 blocks, 356 KB at 20000)."
+    },
+    "scroll_spawns_per_frame_200": {
+      "limit": 5,
+      "measured": 4,
+      "why": "M3 (pool): nodes spawned in the worst frame of a pass of 12 steps of 150 px, down the first screens. A subtree that leaves the window waits in the pool and is rebound to the next block of its shape, so only shapes the pool has none of are spawned. M2 spawned 29 here (every entering block)."
+    },
+    "scroll_despawns_per_frame_200": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): nothing is despawned while the pool (192 subtrees) has room: leaving blocks are hidden and kept. M2 despawned 25 in the worst frame."
+    },
+    "scroll_laid_out_per_frame_200": {
+      "limit": 4,
+      "measured": 3,
+      "why": "M3 (pool), recalibrated in the review of M3: text blocks laid out in the worst scroll frame. Subtrees waiting in the pool now live in one hidden container out of the flow instead of being hidden in place, so leaving the window costs no layout at all and only the blocks that entered are laid out (tests/virtualization.rs checks laid out <= text of the entering blocks, with no allowance for leaving ones). Before the review: 21 (limit 27), 3 of them for subtrees hidden in place, and a subtree that left lost its parent in the first attempt (see docs/plans/fase-2-performance.md)."
+    },
+    "scroll_allocations_per_frame_200": {
+      "limit": 630,
+      "measured": 504,
+      "why": "M3 (pool): allocations in the worst scroll frame (M2: 945-954). Review of M3: 504, since leaving subtrees are no longer touched."
+    },
+    "edit_spawns_200": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): a keystroke in block 3 spawns nothing: the replaced block gives its subtree to the pool and its replacement, of the same shape, takes it back with the new text. M1/M2: 4."
+    },
+    "edit_laid_out_200": {
+      "limit": 3,
+      "measured": 2,
+      "why": "M3 (pool): text blocks laid out by a keystroke in block 3 (a block with two text roots; a test checks that every write and layout of an edit is inside the edited block). M2: 2."
+    },
+    "edit_allocations_200": {
+      "limit": 223,
+      "measured": 182,
+      "why": "M3 (pool): allocations of the keystroke frame, the edit itself included (M2: 271-277). Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "edit_bytes_200": {
+      "limit": 253283,
+      "measured": 203834,
+      "why": "M3 (pool): bytes allocated by the keystroke frame, the same at every size. M2: 1.28 MB, most of it spawning and laying out a new subtree; now the subtree is kept and only the text changes. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "live_blocks_2000": {
+      "limit": 72,
+      "measured": 57,
+      "why": "M2 (virtualization): blocks with entities: one screen above the visible ones to two below. The same at every document size (a test also compares the sets for 2000 and 100000 blocks)."
+    },
+    "bytes_per_block_2000": {
+      "limit": 7637,
+      "measured": 6109,
+      "why": "M2 (virtualization): bytes left allocated by opening the document, per block: the source, the parsed blocks and the height index, plus the fixed cost of the ~57 live blocks (so it falls as the document grows). Before M2 it was 87 KB / 50 KB / 54 KB per block."
+    },
+    "idle_spawns_2000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): nodes spawned or despawned in an idle frame: none, in any of 30 frames."
+    },
+    "idle_laid_out_2000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): text blocks laid out in an idle frame: none, in any of 30 frames."
+    },
+    "idle_allocations_2000": {
+      "limit": 70,
+      "measured": 58,
+      "why": "M2 (virtualization): allocations of an idle frame (the 27th best of 30: Bevy has a frame now and then with ~240 allocations that is not the document's). Before M2 it was 57 at 200 blocks and 58 at 20000, and the bytes below grew with the document. Review of M3-M5: 58 with the pool container and the gutter system in the app (limit unchanged)."
+    },
+    "idle_bytes_2000": {
+      "limit": 45460,
+      "measured": 36368,
+      "why": "M2 (virtualization): bytes allocated by an idle frame: now the same at every size (before: 36 KB at 200 blocks, 356 KB at 20000)."
+    },
+    "scroll_spawns_per_frame_2000": {
+      "limit": 5,
+      "measured": 4,
+      "why": "M3 (pool): nodes spawned in the worst frame of a pass of 12 steps of 150 px, down the first screens. A subtree that leaves the window waits in the pool and is rebound to the next block of its shape, so only shapes the pool has none of are spawned. M2 spawned 29 here (every entering block)."
+    },
+    "scroll_despawns_per_frame_2000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): nothing is despawned while the pool (192 subtrees) has room: leaving blocks are hidden and kept. M2 despawned 25 in the worst frame."
+    },
+    "scroll_laid_out_per_frame_2000": {
+      "limit": 4,
+      "measured": 3,
+      "why": "M3 (pool), recalibrated in the review of M3: text blocks laid out in the worst scroll frame. Subtrees waiting in the pool now live in one hidden container out of the flow instead of being hidden in place, so leaving the window costs no layout at all and only the blocks that entered are laid out (tests/virtualization.rs checks laid out <= text of the entering blocks, with no allowance for leaving ones). Before the review: 21 (limit 27), 3 of them for subtrees hidden in place, and a subtree that left lost its parent in the first attempt (see docs/plans/fase-2-performance.md)."
+    },
+    "scroll_allocations_per_frame_2000": {
+      "limit": 630,
+      "measured": 504,
+      "why": "M3 (pool): allocations in the worst scroll frame (M2: 945-954). Review of M3: 504, since leaving subtrees are no longer touched."
+    },
+    "edit_spawns_2000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): a keystroke in block 3 spawns nothing: the replaced block gives its subtree to the pool and its replacement, of the same shape, takes it back with the new text. M1/M2: 4."
+    },
+    "edit_laid_out_2000": {
+      "limit": 3,
+      "measured": 2,
+      "why": "M3 (pool): text blocks laid out by a keystroke in block 3 (a block with two text roots; a test checks that every write and layout of an edit is inside the edited block). M2: 2."
+    },
+    "edit_allocations_2000": {
+      "limit": 223,
+      "measured": 182,
+      "why": "M3 (pool): allocations of the keystroke frame, the edit itself included (M2: 271-277). Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "edit_bytes_2000": {
+      "limit": 253283,
+      "measured": 203834,
+      "why": "M3 (pool): bytes allocated by the keystroke frame, the same at every size. M2: 1.28 MB, most of it spawning and laying out a new subtree; now the subtree is kept and only the text changes. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "live_blocks_20000": {
+      "limit": 72,
+      "measured": 57,
+      "why": "M2 (virtualization): blocks with entities: one screen above the visible ones to two below. The same at every document size (a test also compares the sets for 2000 and 100000 blocks)."
+    },
+    "bytes_per_block_20000": {
+      "limit": 1232,
+      "measured": 985,
+      "why": "M2 (virtualization): bytes left allocated by opening the document, per block: the source, the parsed blocks and the height index, plus the fixed cost of the ~57 live blocks (so it falls as the document grows). Before M2 it was 87 KB / 50 KB / 54 KB per block."
+    },
+    "idle_spawns_20000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): nodes spawned or despawned in an idle frame: none, in any of 30 frames."
+    },
+    "idle_laid_out_20000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): text blocks laid out in an idle frame: none, in any of 30 frames."
+    },
+    "idle_allocations_20000": {
+      "limit": 70,
+      "measured": 58,
+      "why": "M2 (virtualization): allocations of an idle frame (the 27th best of 30: Bevy has a frame now and then with ~240 allocations that is not the document's). Before M2 it was 57 at 200 blocks and 58 at 20000, and the bytes below grew with the document. Review of M3-M5: 58 with the pool container and the gutter system in the app (limit unchanged)."
+    },
+    "idle_bytes_20000": {
+      "limit": 45460,
+      "measured": 36368,
+      "why": "M2 (virtualization): bytes allocated by an idle frame: now the same at every size (before: 36 KB at 200 blocks, 356 KB at 20000)."
+    },
+    "scroll_spawns_per_frame_20000": {
+      "limit": 5,
+      "measured": 4,
+      "why": "M3 (pool): nodes spawned in the worst frame of a pass of 12 steps of 150 px, down the first screens. A subtree that leaves the window waits in the pool and is rebound to the next block of its shape, so only shapes the pool has none of are spawned. M2 spawned 29 here (every entering block)."
+    },
+    "scroll_despawns_per_frame_20000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): nothing is despawned while the pool (192 subtrees) has room: leaving blocks are hidden and kept. M2 despawned 25 in the worst frame."
+    },
+    "scroll_laid_out_per_frame_20000": {
+      "limit": 4,
+      "measured": 3,
+      "why": "M3 (pool), recalibrated in the review of M3: text blocks laid out in the worst scroll frame. Subtrees waiting in the pool now live in one hidden container out of the flow instead of being hidden in place, so leaving the window costs no layout at all and only the blocks that entered are laid out (tests/virtualization.rs checks laid out <= text of the entering blocks, with no allowance for leaving ones). Before the review: 21 (limit 27), 3 of them for subtrees hidden in place, and a subtree that left lost its parent in the first attempt (see docs/plans/fase-2-performance.md)."
+    },
+    "scroll_allocations_per_frame_20000": {
+      "limit": 630,
+      "measured": 504,
+      "why": "M3 (pool): allocations in the worst scroll frame (M2: 945-954). Review of M3: 504, since leaving subtrees are no longer touched."
+    },
+    "edit_spawns_20000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): a keystroke in block 3 spawns nothing: the replaced block gives its subtree to the pool and its replacement, of the same shape, takes it back with the new text. M1/M2: 4."
+    },
+    "edit_laid_out_20000": {
+      "limit": 3,
+      "measured": 2,
+      "why": "M3 (pool): text blocks laid out by a keystroke in block 3 (a block with two text roots; a test checks that every write and layout of an edit is inside the edited block). M2: 2."
+    },
+    "edit_allocations_20000": {
+      "limit": 215,
+      "measured": 182,
+      "why": "M3 (pool): allocations of the keystroke frame, the edit itself included (M2: 271-277). Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "edit_bytes_20000": {
+      "limit": 252743,
+      "measured": 203834,
+      "why": "M3 (pool): bytes allocated by the keystroke frame, the same at every size. M2: 1.28 MB, most of it spawning and laying out a new subtree; now the subtree is kept and only the text changes. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "idle_frame_ratio_2000_over_200": {
+      "limit": 1.5,
+      "measured": 0.96,
+      "why": "M2 (virtualization): median idle frame at 2000 blocks over the one at 200: 1.0 (before: 6.3 to 7.7). Limit 1.5 as the plan asks; the machine's noise stays below it."
+    },
+    "scroll_frame_ratio_2000_over_200": {
+      "limit": 1.5,
+      "measured": 0.97,
+      "why": "M2 (virtualization): scroll frame ratio, 2000 over 200 blocks: 1.0 (before: 7.2 to 7.7)."
+    },
+    "edit_frame_ratio_2000_over_200": {
+      "limit": 1.5,
+      "measured": 0.99,
+      "why": "M2 (virtualization): keystroke frame ratio, 2000 over 200 blocks: 1.0 (before: 4.7 to 5.1)."
+    },
+    "core_edit_allocations_2000": {
+      "limit": 43,
+      "measured": 38,
+      "why": "M1 (sum tree, relative offsets): allocations of one keystroke in the middle of a 2000-block document, after a warm-up edit. Mostly the reparse of the few blocks around the edit; the tree adds a handful. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_edit_allocations_100000": {
+      "limit": 39,
+      "measured": 33,
+      "why": "M1 (sum tree, relative offsets): the same keystroke at 100000 blocks. The test also demands at most 8 more than at 2000 blocks: the edit costs the same at any size. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_edit_bytes_100000": {
+      "limit": 23999,
+      "measured": 19839,
+      "why": "M1 (sum tree, relative offsets): bytes allocated by that keystroke at 100000 blocks (about 19 KB: the reparsed blocks and the touched tree path). An O(n) copy of the blocks would be megabytes. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_edit_replaced_blocks": {
+      "limit": 1,
+      "measured": 1,
+      "why": "M1 (sum tree, relative offsets): blocks replaced by a keystroke in a block: only that one. Blocks that reparse to the same content (a list whose root grew) are kept and fixed in place."
+    },
+    "core_append_allocations_2000": {
+      "limit": 12,
+      "measured": 9,
+      "why": "M1 (sum tree, relative offsets): allocations of appending one streamed chunk to a 2000-block document."
+    },
+    "core_append_allocations_100000": {
+      "limit": 12,
+      "measured": 9,
+      "why": "M1 (sum tree, relative offsets): the same at 100000 blocks (the test also requires at most 8 more than at 2000)."
+    },
+    "core_lookup_allocations": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M1 (sum tree, relative offsets): allocations of `Document::block_at` plus `Document::block` in a 100000-block document: lookups use a fixed-size stack, never the heap."
+    },
+    "live_blocks_100000": {
+      "limit": 72,
+      "measured": 57,
+      "why": "M2 (virtualization): blocks with entities: one screen above the visible ones to two below. The same at every document size (a test also compares the sets for 2000 and 100000 blocks)."
+    },
+    "bytes_per_block_100000": {
+      "limit": 659,
+      "measured": 527,
+      "why": "M2 (virtualization): bytes left allocated by opening the document, per block: the source, the parsed blocks and the height index, plus the fixed cost of the ~57 live blocks (so it falls as the document grows). Before M2 it was 87 KB / 50 KB / 54 KB per block."
+    },
+    "idle_spawns_100000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): nodes spawned or despawned in an idle frame: none, in any of 30 frames."
+    },
+    "idle_laid_out_100000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M2 (virtualization): text blocks laid out in an idle frame: none, in any of 30 frames."
+    },
+    "idle_allocations_100000": {
+      "limit": 70,
+      "measured": 58,
+      "why": "M2 (virtualization): allocations of an idle frame (the 27th best of 30: Bevy has a frame now and then with ~240 allocations that is not the document's). Before M2 it was 57 at 200 blocks and 58 at 20000, and the bytes below grew with the document. Review of M3-M5: 58 with the pool container and the gutter system in the app (limit unchanged)."
+    },
+    "idle_bytes_100000": {
+      "limit": 45460,
+      "measured": 36368,
+      "why": "M2 (virtualization): bytes allocated by an idle frame: now the same at every size (before: 36 KB at 200 blocks, 356 KB at 20000)."
+    },
+    "scroll_spawns_per_frame_100000": {
+      "limit": 5,
+      "measured": 4,
+      "why": "M3 (pool): nodes spawned in the worst frame of a pass of 12 steps of 150 px, down the first screens. A subtree that leaves the window waits in the pool and is rebound to the next block of its shape, so only shapes the pool has none of are spawned. M2 spawned 29 here (every entering block)."
+    },
+    "scroll_despawns_per_frame_100000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): nothing is despawned while the pool (192 subtrees) has room: leaving blocks are hidden and kept. M2 despawned 25 in the worst frame."
+    },
+    "scroll_laid_out_per_frame_100000": {
+      "limit": 4,
+      "measured": 3,
+      "why": "M3 (pool), recalibrated in the review of M3: text blocks laid out in the worst scroll frame. Subtrees waiting in the pool now live in one hidden container out of the flow instead of being hidden in place, so leaving the window costs no layout at all and only the blocks that entered are laid out (tests/virtualization.rs checks laid out <= text of the entering blocks, with no allowance for leaving ones). Before the review: 21 (limit 27), 3 of them for subtrees hidden in place, and a subtree that left lost its parent in the first attempt (see docs/plans/fase-2-performance.md)."
+    },
+    "scroll_allocations_per_frame_100000": {
+      "limit": 630,
+      "measured": 504,
+      "why": "M3 (pool): allocations in the worst scroll frame (M2: 945-954). Review of M3: 504, since leaving subtrees are no longer touched."
+    },
+    "edit_allocations_100000": {
+      "limit": 223,
+      "measured": 182,
+      "why": "M3 (pool): allocations of the keystroke frame, the edit itself included (M2: 271-277). Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "edit_bytes_100000": {
+      "limit": 253283,
+      "measured": 203834,
+      "why": "M3 (pool): bytes allocated by the keystroke frame, the same at every size. M2: 1.28 MB, most of it spawning and laying out a new subtree; now the subtree is kept and only the text changes. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "idle_frame_ratio_100000_over_200": {
+      "limit": 1.5,
+      "measured": 1.0,
+      "why": "M2 (virtualization): median idle frame at 100000 blocks over the one at 200: 1.0, as the plan asks for under 1.5."
+    },
+    "scroll_frame_ratio_100000_over_200": {
+      "limit": 1.5,
+      "measured": 0.98,
+      "why": "M2 (virtualization): scroll frame ratio, 100000 over 200 blocks: 1.0."
+    },
+    "edit_frame_ratio_100000_over_200": {
+      "limit": 1.5,
+      "measured": 1.0,
+      "why": "M2 (virtualization): keystroke frame ratio, 100000 over 200 blocks: 1.0."
+    },
+    "edit_spawns_100000": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M3 (pool): a keystroke in block 3 spawns nothing: the replaced block gives its subtree to the pool and its replacement, of the same shape, takes it back with the new text. M1/M2: 4."
+    },
+    "edit_laid_out_100000": {
+      "limit": 3,
+      "measured": 2,
+      "why": "M3 (pool): text blocks laid out by a keystroke in block 3 (a block with two text roots; a test checks that every write and layout of an edit is inside the edited block). M2: 2."
+    },
+    "pool_return_text_writes": {
+      "limit": 8,
+      "measured": 5,
+      "why": "M3 (pool): over five back-and-forth rounds of 400 px (about 75 text blocks coming back), the texts written to rebind subtrees: a block that returns finds its own subtree and needs no write, except when a block entering at the bottom took the only subtree of its shape. Without the hint to give a block its own subtree back it is all of them."
+    },
+    "editor_bytes_per_block_overhead_20000": {
+      "limit": 40,
+      "measured": 18.7,
+      "why": "M4 (editor only on the focused block): bytes retained per block when opening 20,000 blocks with a MarkdownEditor on the document minus without it (absolute value). It is noise from two separate apps (-18.7 to +3.6 in five runs, out of ~1,000 per block): the editor adds its components to one block, not to every text. A limit of 40 is 4% of a block; before M4 each text had TextCursorStyle and TextReadWriteMode from spawn."
+    },
+    "focus_laid_out_when_a_block_gains_the_editor": {
+      "limit": 0,
+      "measured": 0,
+      "why": "M4 (G6): text blocks Bevy lays out in the frame where the caret moves into a block and the block gains TextCursorStyle and TextReadWriteMode::Editable (worst of every block of a document with long wrapping paragraphs). Zero: Bevy does not lay the text out again, and the lines are the same, which a test compares for every block."
+    },
+    "scroll_jump_worst_px": {
+      "limit": 2,
+      "measured": 1.2,
+      "why": "M2 review (one-frame jump): after one update with no frame to settle, how far the top of the screen is from where the scroll says it is (the block at the top of the screen, slot top = node top minus its margin), worst of 60 steps up over blocks never measured, 51 of which needed a correction. The correction moves the positions the layout just wrote by the same shift as the scroll position, so no frame is drawn off. The 1.2 px is Bevy's rounding (layout rounds to whole pixels, the scroll position is floored). Without the shift (defect, see Resultados) the worst is tens of pixels."
+    },
+    "gutter_entities_max": {
+      "limit": 1,
+      "measured": 1,
+      "why": "M5 (G9): entities with GutterControls at any moment, over 30 blocks the pointer visits: one, moved with the pointer, never one per block."
+    },
+    "gutter_parts": {
+      "limit": 10,
+      "measured": 10,
+      "why": "M5 (G9): entities that make up the one set of controls (root, the button, its label, the handle and its six dots): fixed, whatever the document size."
+    },
+    "paste_5mb_worst_frame_ms": {
+      "limit": 16,
+      "measured": 38.57,
+      "why": "M6 (G12), NOT MET on this machine: the longest frame (wall time, headless, test profile, from the call that sets 5 MB of text through the frames until the parse landed and six more) when opening 5 MB in an empty Markdown. The test counts EVERY frame of EVERY one of 5 runs and fails when the largest is over the limit: no best-of selection. `measured` is the worst frame over the 15 runs of the last three isolated invocations (load ~15-18): 38.57 ms, the first run of a process, which also pays the one-time text/font initialisation; the 14 others were 9.3 to 17.4 ms (typical 9.5). The test failed in 3 of 3 of those invocations and passed in the workspace run that preceded them. Warm (text laid out before) the frame is 5.9 to 6.5 ms. The parse, the diff against the old document and the height estimates run on the AsyncComputeTaskPool; the frame that installs the result builds only the window, and that window's spawn, layout and text shaping is what is left (see the plan, M6). Synchronous it is hundreds of milliseconds in one frame."
+    },
+    "paste_5mb_into_document_worst_frame_ms": {
+      "limit": 16,
+      "measured": 2.44,
+      "why": "M6 (G12): the same when 5 MB are pasted in the middle of a 2000-block document (the blocks around the paste keep their entities), every frame of every one of 5 runs counted, no best-of selection. `measured` is the worst frame over the 15 runs of the last three isolated invocations (0.84 to 2.44 ms)."
+    },
+    "paste_5mb_open_change_frame_allocated_bytes": {
+      "limit": 5600000,
+      "measured": 5165728,
+      "why": "M8 (source ownership): bytes the main thread allocates in the frame that calls `set_source(&str)` with 5 MB (5,128,768 bytes) and the frame after it, which hands the text to the parse task: ONE copy of the caller's text, shared as an `Arc<String>` by the task and then the document it builds. Before M8 the same frame allocated a second copy for the task (`start` cloned the logical source): about 10.3 MB. Deterministic (three runs: 5,164,792 to 5,165,728). Defect-restoration proof in docs/plans/fase-2-performance.md."
+    },
+    "paste_5mb_into_document_change_frame_allocated_bytes": {
+      "limit": 5800000,
+      "measured": 5237476,
+      "why": "M8 (source ownership): the same for `edit` pasting 5 MB in the middle of a 2000-block document: the new text is built once (old text with the paste in it) and the parse works on that allocation, not on a copy. Before M8: about twice that. Deterministic (5,236,476 to 5,237,476)."
+    },
+    "paste_5mb_into_document_install_frame_allocated_bytes": {
+      "limit": 400000,
+      "measured": 254632,
+      "why": "M8 (prebuilt height index): bytes the main thread allocates in the frame that installs the 5 MB paste in the middle of 2000 blocks. The worker builds the heights of the 142,858 new blocks as a tree and the install splices it in (O(log n)); the drop of the replaced heights goes to the pool. Before M8 the install built a vector of every new block's height and the tree from it on the main thread: 7.4 MB in about 6,800 calls in the slowest frame. Deterministic (254,432 to 254,632)."
+    },
+    "undo_bytes_per_step": {
+      "limit": 128,
+      "measured": 89,
+      "why": "M7 (G10): heap held per history step for a one-byte change (the step struct, 88 bytes, plus the text): the same at 500 and at 20000 blocks. A step that copied the document would be megabytes."
+    },
+    "undo_bytes_per_pasted_byte": {
+      "limit": 1.25,
+      "measured": 1.022,
+      "why": "M7 (G10): heap held by the history for a 4000-byte paste, per pasted byte: the text once (the step keeps the old text, empty for a paste, and the new one)."
+    },
+    "undo_laid_out": {
+      "limit": 3,
+      "measured": 1,
+      "why": "M7 (G10): text blocks laid out in the frame of Cmd+Z in a 2000-block document (a paragraph typed in and undone): the one undone, same limit as a keystroke. A test checks everything laid out or written is under that block and every other block keeps its entity."
+    },
+    "undo_text_writes": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M7 (G10): Text, TextSpan or TextFont written by an undo: only the block undone."
+    },
+    "core_reference_edit_allocations_type": {
+      "limit": 93,
+      "measured": 76,
+      "why": "M9 (definitions index): allocations of typing in a paragraph that mentions a reference in a document of 5000 copies of the references sample (120000 blocks, 1000 definitions and footnotes). The same cost at 200 copies (the test also compares the two). Before M9 any edit touching a definition or a reference label reparsed the whole document. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_reference_edit_parsed_bytes_type": {
+      "limit": 297,
+      "measured": 238,
+      "why": "M9 (definitions index): bytes handed to the parser by typing in a paragraph that mentions a reference: a window around the edit, never the 4.8 MB document (full parses are asserted to be 0)."
+    },
+    "core_reference_edit_replaced_type": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M9 (definitions index): blocks replaced by typing in a paragraph that mentions a reference (the splice a renderer applies)."
+    },
+    "core_reference_edit_allocations_retarget": {
+      "limit": 98,
+      "measured": 80,
+      "why": "M9 (definitions index): allocations of changing where a definition points (its users are reparsed) in a document of 5000 copies of the references sample (120000 blocks, 1000 definitions and footnotes). The same cost at 200 copies (the test also compares the two). Before M9 any edit touching a definition or a reference label reparsed the whole document. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_reference_edit_parsed_bytes_retarget": {
+      "limit": 325,
+      "measured": 260,
+      "why": "M9 (definitions index): bytes handed to the parser by changing where a definition points (its users are reparsed): a window around the edit, never the 4.8 MB document (full parses are asserted to be 0)."
+    },
+    "core_reference_edit_replaced_retarget": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M9 (definitions index): blocks replaced by changing where a definition points (its users are reparsed) (the splice a renderer applies)."
+    },
+    "core_reference_edit_allocations_add": {
+      "limit": 87,
+      "measured": 71,
+      "why": "M9 (definitions index): allocations of adding a definition of a label nobody else defines in a document of 5000 copies of the references sample (120000 blocks, 1000 definitions and footnotes). The same cost at 200 copies (the test also compares the two). Before M9 any edit touching a definition or a reference label reparsed the whole document. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_reference_edit_parsed_bytes_add": {
+      "limit": 246,
+      "measured": 197,
+      "why": "M9 (definitions index): bytes handed to the parser by adding a definition of a label nobody else defines: a window around the edit, never the 4.8 MB document (full parses are asserted to be 0)."
+    },
+    "core_reference_edit_replaced_add": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M9 (definitions index): blocks replaced by adding a definition of a label nobody else defines (the splice a renderer applies)."
+    },
+    "core_reference_edit_allocations_remove": {
+      "limit": 90,
+      "measured": 73,
+      "why": "M9 (definitions index): allocations of deleting a definition (its users turn to text) in a document of 5000 copies of the references sample (120000 blocks, 1000 definitions and footnotes). The same cost at 200 copies (the test also compares the two). Before M9 any edit touching a definition or a reference label reparsed the whole document. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_reference_edit_parsed_bytes_remove": {
+      "limit": 272,
+      "measured": 218,
+      "why": "M9 (definitions index): bytes handed to the parser by deleting a definition (its users turn to text): a window around the edit, never the 4.8 MB document (full parses are asserted to be 0)."
+    },
+    "core_reference_edit_replaced_remove": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M9 (definitions index): blocks replaced by deleting a definition (its users turn to text) (the splice a renderer applies)."
+    },
+    "core_reference_edit_allocations_footnote": {
+      "limit": 88,
+      "measured": 72,
+      "why": "M9 (definitions index): allocations of editing the text of a footnote definition in a document of 5000 copies of the references sample (120000 blocks, 1000 definitions and footnotes). The same cost at 200 copies (the test also compares the two). Before M9 any edit touching a definition or a reference label reparsed the whole document. Re-measured after the list of splices (disjoint splices follow-up): the edit reports a Splices (one Vec) instead of a single Splice, a few allocations more; the limit is unchanged."
+    },
+    "core_reference_edit_parsed_bytes_footnote": {
+      "limit": 245,
+      "measured": 196,
+      "why": "M9 (definitions index): bytes handed to the parser by editing the text of a footnote definition: a window around the edit, never the 4.8 MB document (full parses are asserted to be 0)."
+    },
+    "core_reference_edit_replaced_footnote": {
+      "limit": 2,
+      "measured": 1,
+      "why": "M9 (definitions index): blocks replaced by editing the text of a footnote definition (the splice a renderer applies)."
+    },
+    "core_far_definition_allocations_add": {
+      "limit": 132,
+      "measured": 105,
+      "why": "Allocations of one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is added at the end of the note. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_bytes_add": {
+      "limit": 94328,
+      "measured": 75462,
+      "why": "Bytes allocated by one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is added at the end of the note. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_parsed_bytes_add": {
+      "limit": 504,
+      "measured": 403,
+      "why": "Bytes handed to the parser by one edit (the edit's own window plus one window per mention): M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is added at the end of the note. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_splices_add": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Splices reported: one per mention of the label, nothing for the blocks between. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is added at the end of the note. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_replaced_blocks_add": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Blocks replaced (the larger of removed and inserted): the three mentions. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is added at the end of the note. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_allocations_retarget": {
+      "limit": 130,
+      "measured": 104,
+      "why": "Allocations of one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is a keystroke in the definition's destination. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_bytes_retarget": {
+      "limit": 94113,
+      "measured": 75290,
+      "why": "Bytes allocated by one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is a keystroke in the definition's destination. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_parsed_bytes_retarget": {
+      "limit": 505,
+      "measured": 404,
+      "why": "Bytes handed to the parser by one edit (the edit's own window plus one window per mention): M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is a keystroke in the definition's destination. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_splices_retarget": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Splices reported: one per mention of the label, nothing for the blocks between. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is a keystroke in the definition's destination. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_replaced_blocks_retarget": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Blocks replaced (the larger of removed and inserted): the three mentions. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is a keystroke in the definition's destination. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_allocations_remove": {
+      "limit": 99,
+      "measured": 79,
+      "why": "Allocations of one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is the definition deleted. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_bytes_remove": {
+      "limit": 92425,
+      "measured": 73940,
+      "why": "Bytes allocated by one edit: M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is the definition deleted. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_parsed_bytes_remove": {
+      "limit": 484,
+      "measured": 387,
+      "why": "Bytes handed to the parser by one edit (the edit's own window plus one window per mention): M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is the definition deleted. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_splices_remove": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Splices reported: one per mention of the label, nothing for the blocks between. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is the definition deleted. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "core_far_definition_replaced_blocks_remove": {
+      "limit": 3,
+      "measured": 3,
+      "why": "Blocks replaced (the larger of removed and inserted): the three mentions. M9 follow-up (disjoint splices): a definition edit in a note whose three mentions of the label are ~120000 blocks apart (spread_references_document, 213 / 2103 / 120003 blocks, the largest checked; the three give the same number). The edit is the definition deleted. Before the follow-up the one range covered every block between the mentions (119978 blocks at 120k); now the list names the mentions only, and the test also requires the same value at 213 and 2103 blocks."
+    },
+    "far_definition_frame_allocations": {
+      "limit": 167,
+      "measured": 133,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: a definition added at the end of a document of 120000 blocks whose label is mentioned at the top, with the screen in the middle (the largest size checked, 119998 paragraphs; the test also compares it with 200 and 2000 blocks). The frame has the edit, the parse, the splice of the one mention that is far from the screen, and nothing else: same entities, same heights, no spawn, no layout. Allocations of the frame, edit included."
+    },
+    "far_definition_frame_bytes": {
+      "limit": 145503,
+      "measured": 116402,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: a definition added at the end of a document of 120000 blocks whose label is mentioned at the top, with the screen in the middle (the largest size checked, 119998 paragraphs; the test also compares it with 200 and 2000 blocks). The frame has the edit, the parse, the splice of the one mention that is far from the screen, and nothing else: same entities, same heights, no spawn, no layout. Bytes allocated by the frame, edit included, after a first edit has grown the source's buffer (the doubling of a 4.8 MB String is 9.6 MB and is not the document's cost per edit)."
+    },
+    "far_definition_stream_frame_allocations": {
+      "limit": 148,
+      "measured": 118,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: the definition typed into the end of a 120000-block document one chunk per frame while the screen is in the middle and the only mention is the first block (largest size checked). Allocations of the worst streaming frame (measured 109-118 in three runs)."
+    },
+    "far_definition_stream_frame_bytes": {
+      "limit": 118305,
+      "measured": 94644,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: the definition typed into the end of a 120000-block document one chunk per frame while the screen is in the middle and the only mention is the first block (largest size checked). Bytes allocated by the worst streaming frame."
+    },
+    "far_paste_install_frame_allocations": {
+      "limit": 505,
+      "measured": 403,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: the frame that installs a parsed paste (400 paragraphs, 17 KB, holding the definition of a label the first block mentions) at the end of a 120000-block document, with the screen in the middle (largest size checked; best of three runs, since Bevy has a frame now and then with ~200 allocations that is not the document's). The blocks on screen keep their entities and heights, nothing is spawned or laid out; what the frame allocates is the paste's 400 blocks, the same at 200 and 120000 blocks. Allocations (measured 395-403 in four runs)."
+    },
+    "far_paste_install_frame_bytes": {
+      "limit": 502080,
+      "measured": 401664,
+      "why": "M9 follow-up (disjoint splices), crates/bevy_md/tests/far_edits.rs: the frame that installs a parsed paste (400 paragraphs, 17 KB, holding the definition of a label the first block mentions) at the end of a 120000-block document, with the screen in the middle (largest size checked; best of three runs, since Bevy has a frame now and then with ~200 allocations that is not the document's). The blocks on screen keep their entities and heights, nothing is spawned or laid out; what the frame allocates is the paste's 400 blocks, the same at 200 and 120000 blocks. Bytes allocated (measured 392-402 KB in four runs)."
+    }
+  }
+}
