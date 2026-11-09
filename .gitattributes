@@ -1,0 +1,6 @@
+# Fixtures and sources are compared byte for byte by the tests: keep LF on every platform.
+*.md text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+crates/**/fixtures/** text eol=lf

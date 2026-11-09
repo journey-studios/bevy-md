@@ -19,7 +19,13 @@ separada do Tessel Desktop; integração ao aplicativo ainda não foi comprovada
 - Virtualização, estimativas/medidas de altura, âncora de scroll e pool de entidades.
 - Parse assíncrono revisionado, fonte compartilhada e índice de alturas preparado
   no worker. Entrada recebida durante parse fica em fila.
-- Editor no bloco focado, caret, gutter visual, paste e undo/redo por deltas.
+- Editor no bloco focado, caret, gutter visual e undo/redo por deltas.
+- Edição básica de texto (2026-11-09), cada frente em seu módulo de
+  `crates/bevy_md_editor/src` e seu teste em `tests/`: `selection` (Shift, Ctrl+A,
+  Esc, digitar sobre a seleção), `navigation` (↑/↓, entre blocos, páginas),
+  `pointer` (clique duplo/triplo, arrastar), `clipboard` (copiar, recortar,
+  colar sobre a seleção), `blocks` (Enter, unir blocos) e `words` (Ctrl+setas,
+  Ctrl+Backspace/Delete).
 - Testes de propriedades, orçamentos de custo e harness de janela nativa.
 
 O histórico detalhado, medições e ressalvas estão em
@@ -39,8 +45,17 @@ O histórico detalhado, medições e ressalvas estão em
    rodadas. Manter todas as cinco rodadas na aceitação, sem escolher a melhor.
 5. Provar scroll estável a 120 fps. O gate mede cadência aproximada de render;
    não mede timestamps de apresentação nem GPU. Não confundir com FPS apresentado.
-6. Editor completo e ecossistema: seleção, copiar/recortar, IME com composição,
-   clipboard do sistema, UX de blocos e integração ao Tessel são frentes posteriores.
+6. Editor completo e ecossistema: IME com composição, clipboard do sistema, UX de
+   blocos (fase 4) e integração ao Tessel são frentes posteriores. Lacunas da
+   edição básica: rolar até o caret, rolagem ao arrastar, destaque da seleção
+   fora do bloco do caret, blocos sem source map (código, HTML, tabela) e Enter
+   dentro de link ou estilos mistos.
+7. Windows: `.gitattributes` fixa LF (os testes comparam bytes). As sondas de CPU
+   (`rustix`) só existem em Unix e leem zero no Windows. Falham no Windows por
+   orçamento de alocações calibrado em outra plataforma: `bevy_md` `budgets`
+   (`idle_allocations_*`, medido 88 contra limite 70) e `far_edits`
+   (`streaming_a_definition_reaches_the_top_without_touching_the_rest`).
+   Recalibrar ou separar o orçamento por plataforma antes de usar como gate.
 
 ## Arquivos e evidência
 

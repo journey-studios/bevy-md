@@ -19,7 +19,7 @@ For the implementation handoff, remaining performance criteria, and commands, se
 |---|---|
 | `bevy_md_core` | Markdown to a flat list of blocks with styled runs; incremental edits and appends that always equal a full parse. |
 | `bevy_md` | Bevy plugin: a `Markdown` component that renders the blocks as UI nodes and syncs only what changed. |
-| `bevy_md_editor` | Rich text editing (phase 3, in progress): a caret over the rendered text whose edits go to the markdown source, with the editor only on the focused block and undo/redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`) kept as inverted splices. |
+| `bevy_md_editor` | Rich text editing (phase 3, in progress): a caret over the rendered text whose edits go to the markdown source, with the editor only on the focused block. It has selection (Shift, double and triple click, drag), vertical and cross-block navigation, copy/cut/paste, Enter and block joining, word motion, and undo/redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`) kept as inverted splices. |
 
 ## Usage
 
@@ -55,7 +55,7 @@ cargo run -p bevy_md --example streaming --release
 ```
 
 ```sh
-cargo run -p bevy_md_editor --example spike     # click, type, Backspace, arrows in a rendered paragraph
+cargo run -p bevy_md_editor --example spike     # click, drag, type, Enter, arrows, Shift, copy and paste in rendered markdown
 ```
 
 Block controls: add `MarkdownGutter` next to `Markdown` (with some left padding) and hovering a block shows a `+` button and a drag handle in the margin. It is one entity moved from block to block, never one per block; only the look is there so far, dragging and the menu come in phase 4.

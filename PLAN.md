@@ -507,16 +507,25 @@ buffer/rope rejeitados com números.
 - [x] Spike D4: caret próprio sobre `TextLayoutInfo` (ver "Resultado do spike D4")
 - [x] Editor só no bloco focado (G5), sem mudar as linhas do bloco ao
       ganhá-lo (G6) (marco M4)
-- [ ] Caret, seleção (mouse, teclado, shift, palavra, linha) e navegação
-      entre blocos
-- [ ] Digitação, backspace e delete, incluindo unir e separar blocos
+- [x] Caret, seleção (mouse, teclado, shift, palavra, linha) e navegação
+      entre blocos: ↑/↓ com coluna preferida, ←/→ entre blocos, PageUp/PageDown,
+      Ctrl+Home/End, Shift+movimentos, Ctrl+A, Esc, clique duplo (palavra) e
+      triplo (bloco), arrastar entre blocos e Shift+clique. **Falta:** rolar a
+      tela até o caret, rolagem automática ao arrastar, destacar a seleção nos
+      blocos fora do bloco do caret, seleção dentro de código, HTML e tabelas
+      (sem source map)
+- [x] Digitação, backspace e delete, incluindo unir e separar blocos: Enter
+      divide (item de lista, citação, código), Backspace/Delete unem blocos,
+      Ctrl+←/→ e Ctrl+Backspace/Delete por palavra, digitar sobre a seleção
+      (um passo de undo). **Falta:** Enter em link e estilos mistos, e Shift+Ctrl
+      +seta (seleção por palavra)
 - [ ] IME (japonês, chinês, coreano) e texto bidirecional
 - [x] Undo e redo com transações agrupadas por tempo e palavra, guardando
       splices invertidos (G10) (marco M7; `Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`)
-- [~] Clipboard: **colar** com `Cmd/Ctrl+V` pelo recurso `Clipboard` do Bevy
-      já funciona no editor (buffer em processo; `system-clipboard` opt-in,
-      não exercitado). **Falta:** copiar e recortar (dependem de seleção),
-      colar markdown contra texto puro
+- [~] Clipboard: copiar, recortar e colar (`Cmd/Ctrl+C/X/V`) sobre a seleção,
+      como markdown-fonte e um passo de undo (buffer em processo;
+      `system-clipboard` opt-in, não exercitado). **Falta:** colar markdown
+      contra texto puro e copiar como texto renderizado
 - **Critério:** editar `sample.md` inteiro só com teclado; undo volta a
   fonte byte a byte.
 
