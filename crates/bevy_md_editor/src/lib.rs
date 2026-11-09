@@ -57,17 +57,25 @@
 //! # Clipboard
 //!
 //! `Cmd/Ctrl+V` (and the `Paste` key) inserts the text of Bevy's
-//! [`Clipboard`] at the caret, as one step of the history. Bevy's own
-//! `EditableText` handles paste for itself only; this crate reads the
-//! resource directly. By default the resource is an in-process buffer; the
-//! `system-clipboard` feature reads the operating system's. Copy and cut need
-//! a selection, which does not exist yet.
+//! [`Clipboard`] at the caret, or in place of the selection, as one step of
+//! the history. `Cmd/Ctrl+C` (`Copy`) puts the selected **markdown source**
+//! on the clipboard, delimiters included, and changes nothing else;
+//! `Cmd/Ctrl+X` (`Cut`) does that and deletes the selection, as one step
+//! whose undo gives back the text and the selection. Copy and cut do nothing
+//! without a selection, and a cut that cannot write to the clipboard deletes
+//! nothing ([`EditMetrics::copy_failures`]). Bevy's own `EditableText`
+//! handles the clipboard for itself only; this crate reads the resource
+//! directly. By default the resource is an in-process buffer; the
+//! `system-clipboard` feature reads the operating system's. A paste reads the
+//! clipboard when the key is pressed; copy and cut read the selection when
+//! they are applied, like every queued action.
 //!
 //! Put a [`MarkdownEditor`] on the entity of a [`Markdown`] and add
 //! [`MarkdownEditorPlugin`]. Not yet: selection, moving between
 //! blocks, splitting and joining blocks, and IME composition (committed text
 //! is inserted).
 
+mod clipboard;
 mod edit;
 mod history;
 mod pointer;
@@ -156,6 +164,8 @@ pub struct MarkdownEditor {
     /// Which modifier keys are down, followed from the key events in order
     /// so that a chord that goes down and up inside one frame still counts.
     modifiers: Modifiers,
+    /// The selections that cuts and pastes replaced, for undo.
+    selections: clipboard::SelectionMemos,
 }
 
 /// Modifier keys that change what a key means.
@@ -204,6 +214,7 @@ impl MarkdownEditor {
             pending: VecDeque::new(),
             revision: 0,
             modifiers: Modifiers::default(),
+            selections: clipboard::SelectionMemos::default(),
         }
     }
 
@@ -276,9 +287,15 @@ impl MarkdownEditor {
     /// Take back the last step of the history and put the caret where it was
     /// before it. Returns whether anything was undone.
     pub fn undo(&mut self, markdown: &mut Markdown) -> bool {
+        // A step that replaced a selection (a cut, a paste over it) gives it back.
+        let selection =
+            (self.history.steps().last()).and_then(|step| self.selections.selection_of(step));
         match self.history.undo(markdown) {
             Some(caret) => {
                 self.set_caret(markdown, caret);
+                if let Some((anchor, caret)) = selection {
+                    self.set_selection(markdown, anchor, caret);
+                }
                 true
             }
             None => false,
@@ -348,6 +365,9 @@ pub struct EditMetrics {
     /// Paste shortcuts that found nothing to paste because the clipboard
     /// could not be read as text (not counting an empty clipboard).
     pub paste_failures: u64,
+    /// Copy and cut shortcuts that could not write to the clipboard (a cut
+    /// that fails deletes nothing).
+    pub copy_failures: u64,
     /// The slowest `key_to_layout` so far.
     pub worst: Duration,
     started: Option<Instant>,
@@ -374,6 +394,13 @@ enum Action {
     /// Text from the clipboard: an [`Action::Insert`] that is a step of its
     /// own in the history.
     Paste(String),
+    /// A paste that reads the clipboard when it is applied, because a copy or
+    /// a cut is ahead of it in the queue.
+    PasteClipboard,
+    /// The selected source to the clipboard.
+    Copy,
+    /// Copy, then delete the selection, as one step of the history.
+    Cut,
     Undo,
     Redo,
 }
@@ -382,6 +409,22 @@ impl Action {
     /// Whether the action reads the glyph layout of the caret's block.
     fn needs_layout(&self) -> bool {
         matches!(self, Action::Move(_) | Action::Backspace | Action::Delete)
+    }
+
+    /// Whether the action can change the source, and counts as an edit in
+    /// [`EditMetrics`] when it does.
+    fn edits_source(&self) -> bool {
+        matches!(
+            self,
+            Action::Insert(_)
+                | Action::Paste(_)
+                | Action::PasteClipboard
+                | Action::Cut
+                | Action::Backspace
+                | Action::Delete
+                | Action::Undo
+                | Action::Redo
+        )
     }
 }
 
@@ -473,16 +516,22 @@ fn key_action(
     modifiers: Modifiers,
     clipboard: Option<&mut Clipboard>,
     metrics: &mut EditMetrics,
+    // A copy or a cut is waiting ahead: a paste reads the clipboard late.
+    clipboard_ahead: bool,
 ) -> Option<Action> {
     let (command, shift) = (modifiers.command(), modifiers.shift);
     match &event.logical_key {
         Key::Character(c) if command && c.eq_ignore_ascii_case("z") => {
             Some(if shift { Action::Redo } else { Action::Undo })
         }
+        Key::Character(c) if command && c.eq_ignore_ascii_case("c") => Some(Action::Copy),
+        Key::Character(c) if command && c.eq_ignore_ascii_case("x") => Some(Action::Cut),
         Key::Character(c) if command && c.eq_ignore_ascii_case("v") => {
-            paste_action(clipboard, metrics)
+            clipboard::paste_shortcut(clipboard, metrics, clipboard_ahead)
         }
-        Key::Paste => paste_action(clipboard, metrics),
+        Key::Copy => Some(Action::Copy),
+        Key::Cut => Some(Action::Cut),
+        Key::Paste => clipboard::paste_shortcut(clipboard, metrics, clipboard_ahead),
         Key::ArrowLeft => Some(Action::Move(Motion::Left)),
         Key::ArrowRight => Some(Action::Move(Motion::Right)),
         Key::Home => Some(Action::Move(Motion::Home)),
@@ -563,11 +612,14 @@ fn handle_input(
             Key::Shift => modifiers.shift = down,
             _ => {
                 if down {
+                    let clipboard_ahead =
+                        (editor.pending.iter().chain(read.iter())).any(Action::writes_clipboard);
                     read.extend(key_action(
                         event,
                         modifiers,
                         clipboard.as_deref_mut(),
                         &mut metrics,
+                        clipboard_ahead,
                     ));
                 }
                 continue;
@@ -636,17 +688,18 @@ fn handle_input(
                     .and_then(|block| blocks.layout(&markdown, block))
             })
             .flatten();
-        let edited = matches!(
-            action,
-            Action::Insert(_)
-                | Action::Paste(_)
-                | Action::Backspace
-                | Action::Delete
-                | Action::Undo
-                | Action::Redo
-        );
+        let edited = action.edits_source();
         let before = Instant::now();
-        if apply(&mut editor, &mut markdown, layout, &action, now) && edited {
+        let changed = clipboard::dispatch(
+            &mut editor,
+            &mut markdown,
+            layout,
+            &action,
+            clipboard.as_deref_mut(),
+            &mut metrics,
+            now,
+        );
+        if changed && edited {
             metrics.document_edit = Some(before.elapsed());
             metrics.edits += 1;
         }
@@ -675,14 +728,11 @@ fn apply(
             true
         }
         Action::Paste(text) => {
-            // A paste is one thing to undo: not the tail of the word typed
-            // before it, and not the head of the word typed after it.
-            editor.history.seal();
-            let change = edit::insert(markdown, &mut editor.caret, text);
-            editor.history.record(change, now);
-            editor.history.seal();
+            clipboard::paste(editor, markdown, text, now);
             true
         }
+        // Applied by `clipboard::apply`, which has the clipboard.
+        Action::PasteClipboard | Action::Copy | Action::Cut => false,
         Action::Undo => editor.undo(markdown),
         Action::Redo => editor.redo(markdown),
         Action::Move(motion) => {
