@@ -297,7 +297,8 @@ fn the_default_click_settings_are_the_usual_ones() {
 fn a_click_that_is_over_no_text_changes_nothing() {
     let mut doc = Open::new(WORDS);
     doc.caret_at(3);
-    doc.press(Vec2::new(5.0, 5.0));
+    // Far outside the node of the document.
+    doc.press(Vec2::new(-500.0, -500.0));
     assert_eq!(doc.editor().caret(), 3);
     assert_eq!(doc.metrics().clicks_ignored, 0);
 }
@@ -642,4 +643,203 @@ fn the_mouse_with_shift_down_extends_the_selection() {
     doc.button(ButtonState::Pressed);
     assert_eq!(doc.selected(), None);
     assert_eq!(doc.editor().caret(), 10);
+}
+
+// ---------------------------------------------------------------------------
+// A click anywhere on the line, the mouse cursor, the caret between blocks
+// ---------------------------------------------------------------------------
+
+impl Open {
+    /// The window pixels of the document's node: `(left, top, right, bottom)`.
+    fn area(&mut self) -> (f32, f32, f32, f32) {
+        let markdown = self.markdown;
+        let world = self.app.world();
+        let node = world.get::<ComputedNode>(markdown).unwrap();
+        let transform = world.get::<UiGlobalTransform>(markdown).unwrap();
+        let (c, half) = (transform.translation, node.size() / 2.0);
+        (c.x - half.x, c.y - half.y, c.x + half.x, c.y + half.y)
+    }
+
+    /// The window pixels of the box of block `block`: `(top, bottom)`.
+    fn block_rows(&mut self, block: usize) -> (f32, f32) {
+        let root = self.markdown().block_entity(block).expect("block is shown");
+        let world = self.app.world();
+        let node = world.get::<ComputedNode>(root).unwrap();
+        let transform = world.get::<UiGlobalTransform>(root).unwrap();
+        let (c, half) = (transform.translation.y, node.size().y / 2.0);
+        (c - half, c + half)
+    }
+
+    fn window_icon(&mut self) -> Option<bevy::window::CursorIcon> {
+        let world = self.app.world_mut();
+        let window = world
+            .query_filtered::<Entity, With<PrimaryWindow>>()
+            .single(world)
+            .unwrap();
+        world.get::<bevy::window::CursorIcon>(window).cloned()
+    }
+
+    fn key_press(&mut self, key_code: KeyCode, logical_key: Key, text: Option<&str>) {
+        self.app.world_mut().write_message(KeyboardInput {
+            key_code,
+            logical_key,
+            state: ButtonState::Pressed,
+            text: text.map(Into::into),
+            repeat: false,
+            window: Entity::PLACEHOLDER,
+        });
+        self.frame();
+        self.frame();
+    }
+}
+
+#[test]
+fn a_click_to_the_right_of_a_line_puts_the_caret_at_its_end() {
+    let mut doc = Open::new(WORDS);
+    let (_, _, right, _) = doc.area();
+    let row = doc.point(0, 3).y;
+    doc.press(Vec2::new(right - 2.0, row));
+    assert_eq!(doc.editor().caret(), WORDS.trim_end().len());
+    assert_eq!(doc.selected(), None);
+}
+
+#[test]
+fn a_click_to_the_left_of_a_line_puts_the_caret_at_its_start() {
+    let mut doc = Open::new(WORDS);
+    doc.caret_at(9);
+    let (left, ..) = doc.area();
+    let row = doc.point(0, 3).y;
+    doc.press(Vec2::new(left + 1.0, row));
+    assert_eq!(doc.editor().caret(), 0);
+}
+
+#[test]
+fn a_click_between_two_blocks_goes_to_the_nearest_one() {
+    let mut doc = Open::new(BLOCKS);
+    let x = doc.point(0, 3).x;
+    let (_, first_bottom) = doc.block_rows(0);
+    let (second_top, _) = doc.block_rows(1);
+    assert!(second_top > first_bottom, "the blocks have space between");
+    // Just under the first block, and just over the second.
+    doc.press(Vec2::new(x, first_bottom + 0.5));
+    assert_eq!(doc.editor().caret(), 3);
+    doc.press(Vec2::new(x, second_top - 0.5));
+    assert_eq!(doc.editor().caret(), doc.start(1) + 3);
+}
+
+#[test]
+fn a_click_below_the_last_block_goes_to_the_end_of_the_document() {
+    let mut doc = Open::new(BLOCKS);
+    let x = doc.point(2, 3).x;
+    let (_, _, _, bottom) = doc.area();
+    doc.press(Vec2::new(x, bottom - 0.5));
+    assert!(doc.editor().caret() >= doc.start(2));
+    assert!(doc.editor().caret() <= BLOCKS.trim_end().len());
+}
+
+#[test]
+fn a_double_click_to_the_right_of_a_line_still_selects_a_word() {
+    let mut doc = Open::new(WORDS);
+    let (_, _, right, _) = doc.area();
+    let row = doc.point(0, 3).y;
+    doc.click(Vec2::new(right - 2.0, row), 2);
+    // The nearest glyphs to that point are the last word.
+    assert_eq!(doc.selected(), Some("delta"));
+}
+
+const WITH_LINK: &str = "see [the docs](https://bevy.org) here\n\nsecond\n";
+
+#[test]
+fn the_mouse_is_an_i_beam_over_the_document_and_the_default_outside() {
+    use bevy::window::{CursorIcon, SystemCursorIcon};
+    let mut doc = Open::with_window(WITH_LINK);
+    // On the text.
+    let on_text = doc.point(0, 1);
+    doc.cursor_to(on_text);
+    doc.frame();
+    assert_eq!(
+        doc.window_icon(),
+        Some(CursorIcon::System(SystemCursorIcon::Text))
+    );
+    // On the empty part of the line, still a place to click.
+    let (_, _, right, _) = doc.area();
+    doc.cursor_to(Vec2::new(right - 2.0, on_text.y));
+    doc.frame();
+    assert_eq!(
+        doc.window_icon(),
+        Some(CursorIcon::System(SystemCursorIcon::Text))
+    );
+    // Outside the document: the window's own.
+    doc.cursor_to(Vec2::new(-500.0, -500.0));
+    doc.frame();
+    assert_eq!(doc.window_icon(), Some(CursorIcon::default()));
+}
+
+#[test]
+fn the_mouse_is_a_hand_over_a_link_and_only_over_it() {
+    use bevy::window::{CursorIcon, SystemCursorIcon};
+    let mut doc = Open::with_window(WITH_LINK);
+    // "see " is 4 bytes, the link text is "the docs".
+    let on_link = doc.point(0, 6);
+    doc.cursor_to(on_link);
+    doc.frame();
+    assert_eq!(
+        doc.window_icon(),
+        Some(CursorIcon::System(SystemCursorIcon::Pointer))
+    );
+    // The word after the link, and the empty part of the line.
+    let after = doc.point(0, "see the docs here".len() - 1);
+    doc.cursor_to(after);
+    doc.frame();
+    assert_eq!(
+        doc.window_icon(),
+        Some(CursorIcon::System(SystemCursorIcon::Text))
+    );
+    let (_, _, right, _) = doc.area();
+    doc.cursor_to(Vec2::new(right - 2.0, on_link.y));
+    doc.frame();
+    assert_eq!(
+        doc.window_icon(),
+        Some(CursorIcon::System(SystemCursorIcon::Text))
+    );
+}
+
+fn gap_caret(doc: &mut Open) -> Option<(f32, f32, f32, Visibility)> {
+    use bevy_md_editor::GapCaret;
+    let world = doc.app.world_mut();
+    let mut query = world.query_filtered::<(&Node, &Visibility), With<GapCaret>>();
+    let (node, visibility) = query.iter(world).next()?;
+    let (Val::Px(left), Val::Px(top), Val::Px(height)) = (node.left, node.top, node.height) else {
+        panic!("the gap caret is placed in pixels");
+    };
+    Some((left, top, height, *visibility))
+}
+
+#[test]
+fn enter_at_the_end_of_a_block_shows_a_caret_between_the_blocks() {
+    let mut doc = Open::with_window("first\n\nsecond\n");
+    assert!(gap_caret(&mut doc).is_none(), "nothing to show in a block");
+
+    doc.caret_at(5);
+    doc.key_press(KeyCode::Enter, Key::Enter, Some("\r"));
+    let (_, first_bottom) = doc.block_rows(0);
+    let (second_top, _) = doc.block_rows(1);
+    let (left, top, height, visibility) = gap_caret(&mut doc).expect("the gap caret exists");
+    assert_eq!(visibility, Visibility::Visible);
+    assert!(height > 0.0);
+    // The caret is in the gap, between the two blocks.
+    let middle = top + height / 2.0;
+    assert!(
+        (first_bottom..=second_top).contains(&middle),
+        "{middle} is not between {first_bottom} and {second_top}"
+    );
+    let (area_left, ..) = doc.area();
+    assert!(left >= area_left, "at the left edge of the text");
+
+    // Back in a block, Bevy draws the caret and the gap one is hidden.
+    doc.caret_at(2);
+    doc.frame();
+    doc.frame();
+    let (.., visibility) = gap_caret(&mut doc).expect("the node is kept");
+    assert_eq!(visibility, Visibility::Hidden);
 }

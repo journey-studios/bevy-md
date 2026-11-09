@@ -36,7 +36,7 @@ use bevy::time::Real;
 use bevy::ui::{ComputedNode, UiGlobalTransform};
 use bevy::window::PrimaryWindow;
 use bevy_md::{BlockText, Markdown};
-use parley::{Cursor, Layout, Selection};
+use parley::{Affinity, Cursor, Layout, Selection};
 
 use crate::{BlockTexts, EditMetrics, MarkdownEditor, edit, handle_input, place_caret};
 
@@ -182,19 +182,22 @@ fn mouse_to_pointer_input(
 }
 
 /// A point over the text of a block.
-struct Hit {
-    block: usize,
+pub(crate) struct Hit {
+    pub(crate) block: usize,
     /// The block's text entity.
     entity: Entity,
     /// In the space of the block's layout.
-    point: Vec2,
+    pub(crate) point: Vec2,
 }
 
 /// Finds the text under a point and reads it.
 #[derive(SystemParam)]
-struct Hits<'w, 's> {
+pub(crate) struct Hits<'w, 's> {
     ui_scale: Res<'w, UiScale>,
     blocks: BlockTexts<'w, 's>,
+    /// The node of the document: a click anywhere in it is a click on the
+    /// text, not only a click on a glyph.
+    areas: Query<'w, 's, (&'static ComputedNode, &'static UiGlobalTransform), With<MarkdownEditor>>,
     texts: Query<
         'w,
         's,
@@ -208,10 +211,66 @@ struct Hits<'w, 's> {
 }
 
 impl Hits<'_, '_> {
+    /// Whether `position` (physical window pixels) is anywhere in the node
+    /// of the document, its padding and the empty part of a line included.
+    pub(crate) fn in_area(&self, position: Vec2) -> bool {
+        self.areas.iter().any(|(node, transform)| {
+            let Some(inverse) = transform.try_inverse() else {
+                return false;
+            };
+            // The same mapping as `locate`: the node's own space, centered.
+            let local = inverse.transform_point2(position / self.ui_scale.0);
+            let half = node.size() / 2.0;
+            local.x.abs() <= half.x && local.y.abs() <= half.y
+        })
+    }
+
+    /// The block a click at `position` lands on: the text under it, or else,
+    /// anywhere in the document's node, the nearest block (so a click to the
+    /// right of a short line, or in the space between blocks, still puts the
+    /// caret on that line instead of being lost).
+    pub(crate) fn locate_click(&self, markdown: &Markdown, position: Vec2) -> Option<Hit> {
+        self.locate(markdown, position, false).or_else(|| {
+            self.in_area(position)
+                .then(|| self.locate(markdown, position, true))
+                .flatten()
+        })
+    }
+
+    /// Whether the point of `hit` is over text that is a link (or an
+    /// image), by the glyphs' own rectangles: the empty part of the line
+    /// after a link is not.
+    pub(crate) fn over_link(&self, markdown: &Markdown, hit: &Hit) -> bool {
+        let Some(block) = markdown.document().block(hit.block) else {
+            return false;
+        };
+        let Some(layout) = self.layout(hit) else {
+            return false;
+        };
+        let Vec2 { x, y } = hit.point;
+        block
+            .content
+            .runs
+            .iter()
+            .filter(|run| run.link.is_some() && run.start < run.end)
+            .any(|run| {
+                let selection = Selection::new(
+                    Cursor::from_byte_index(layout, run.start as usize, Affinity::Downstream),
+                    Cursor::from_byte_index(layout, run.end as usize, Affinity::Upstream),
+                );
+                selection.geometry(layout).iter().any(|(bounds, _)| {
+                    f64::from(x) >= bounds.x0
+                        && f64::from(x) <= bounds.x1
+                        && f64::from(y) >= bounds.y0
+                        && f64::from(y) <= bounds.y1
+                })
+            })
+    }
+
     /// The block under `position` (physical window pixels). With `nearest`
     /// a point over no text gives the block nearest to it vertically (then
     /// horizontally): what a drag needs when the pointer leaves the text.
-    fn locate(&self, markdown: &Markdown, position: Vec2, nearest: bool) -> Option<Hit> {
+    pub(crate) fn locate(&self, markdown: &Markdown, position: Vec2, nearest: bool) -> Option<Hit> {
         let mut best: Option<((f32, f32), Hit)> = None;
         for (block, _) in markdown.live_blocks() {
             let Some(entity) = self.blocks.entity(markdown, block) else {
@@ -318,7 +377,7 @@ fn apply_pointer_input(
                     state.reset();
                     continue;
                 }
-                let Some(hit) = hits.locate(markdown, position, false) else {
+                let Some(hit) = hits.locate_click(markdown, position) else {
                     state.reset();
                     continue;
                 };

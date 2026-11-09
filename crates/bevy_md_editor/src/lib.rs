@@ -103,11 +103,15 @@
 mod blocks;
 mod clipboard;
 mod edit;
+mod gap;
 mod history;
+mod hover;
 mod navigation;
 mod pointer;
 mod selection;
 mod words;
+
+pub use gap::GapCaret;
 
 pub use history::{Change, GROUP_WINDOW, History, MAX_STEPS, Step};
 pub use pointer::{ClickSettings, PointerInput};
@@ -140,7 +144,11 @@ impl Plugin for MarkdownEditorPlugin {
         if !app.is_plugin_added::<MarkdownPlugin>() {
             app.add_plugins(MarkdownPlugin);
         }
-        app.add_plugins(pointer::PointerPlugin);
+        app.add_plugins((
+            pointer::PointerPlugin,
+            hover::HoverPlugin,
+            gap::GapCaretPlugin,
+        ));
         app.init_resource::<CaretStyle>()
             .init_resource::<EditMetrics>()
             .add_message::<PlaceCaret>()

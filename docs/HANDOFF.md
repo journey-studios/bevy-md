@@ -26,6 +26,14 @@ separada do Tessel Desktop; integração ao aplicativo ainda não foi comprovada
   `pointer` (clique duplo/triplo, arrastar), `clipboard` (copiar, recortar,
   colar sobre a seleção), `blocks` (Enter, unir blocos) e `words` (Ctrl+setas,
   Ctrl+Backspace/Delete).
+- Ponteiro e caret visíveis (2026-11-09): clique em qualquer ponto da linha (à
+  direita/esquerda, entre blocos ou abaixo do fim) leva o caret ao ponto mais
+  próximo (`Hits::locate_click` em `pointer.rs`); o cursor do mouse vira I-beam
+  sobre o documento e mão sobre links (`hover.rs`, só pelo ícone da janela;
+  `bevy_feathers` ou `OverrideCursor` podem sobrescrever); `gap.rs` desenha o
+  caret piscando em linha em branco entre blocos (`GapCaret`), pois o Markdown
+  não tem parágrafo vazio e o Bevy não desenha caret ali. Clicar em link ainda
+  não abre nada.
 - Testes de propriedades, orçamentos de custo e harness de janela nativa.
 
 O histórico detalhado, medições e ressalvas estão em
